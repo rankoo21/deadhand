@@ -1,174 +1,222 @@
-# Deadhand
+<div align="center">
 
-"Some words should wait for the world."
+# DEADHAND
 
-Deadhand is a candlelit chamber of sealed bronze vaults. Each vault holds a
-secret behind a wax seal, bound to a real-world condition written in plain
-language. The author cannot open it early. The recipient cannot force it. The
-only thing that breaks the seal is agreement among GenLayer validators that the
-condition has actually become true, read from public evidence.
+### Some words should wait for the world.
 
-## 1. What is this?
+<br />
+
+[![Live Demo](https://img.shields.io/badge/Live_Demo-deadhand.pages.dev-1a1a1a?style=for-the-badge)](https://deadhand.pages.dev)
+[![Network](https://img.shields.io/badge/Network-Testnet_Bradbury-8b0000?style=for-the-badge)](https://explorer-bradbury.genlayer.com/address/0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd)
+[![GenLayer](https://img.shields.io/badge/GenLayer-Intelligent_Contract-2d2d2d?style=for-the-badge)](https://genlayer.com)
+
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?style=flat-square&logo=next.js)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
+<br />
+
+```
+------------------------------------------------------------------
+   SEALED DOSSIER . CASE FILE: DEADHAND
+   CLASSIFICATION: HELD SHUT UNTIL THE WORLD AGREES
+   CUSTODY: GENLAYER VALIDATORS, TESTNET BRADBURY
+   SEAL STATUS: INTACT
+------------------------------------------------------------------
+```
+
+</div>
+
+> A message is written. A condition is named. The wax is pressed.
+> From that moment, no single hand can open it, not the author's, not the
+> keeper's. The seal waits for the world to catch up.
+
+---
+
+## The Premise
 
 Deadhand is a sealed-message vault that opens only when a real-world condition
-becomes true. You write a message, a bequest, a reveal, or an instruction, and
-bind it to a condition such as "When this studio ships its 1.0 release" or "When
-this world record is officially broken". The message is sealed with wax. It
-stays held shut until the world catches up.
+becomes true. A user writes something meant for later (a message, a bequest, a
+reveal, an instruction) and binds it to a condition stated in plain language:
+"When this company goes public", "When this record is officially broken", "When
+this studio ships its 1.0 release".
 
-The experience moves through one chamber:
+The message is committed behind a seal. It stays held shut until public evidence
+confirms the condition has actually happened. The trigger is an interpreted
+event, not a clock. This is not a time lock, not a vote, not a verdict, and not
+a dashboard.
 
-Press a seal -> bind a condition -> let it wait -> check the world -> watch the
-seal melt -> the recipient reads.
+> The author cannot open it early. The recipient cannot force it. Only the world,
+> as read and agreed by the keepers, melts the seal.
 
-This is not a DAO, not a vote, not a verdict, not a dashboard, and not a
-time-locked wallet. The trigger is an interpreted event, not a clock.
+---
 
-## 2. Why GenLayer?
+## Chain of Custody
 
-Deciding whether a fuzzy real-world condition has actually happened, given messy
-public traces, is a subjective semantic judgment. A single server could fake it.
-GenLayer validators each reproduce the interpretation and must agree on the
-boolean "met" and on a coarse closeness band before the shared state advances
-toward release. Consensus makes the release canonical and tamper resistant.
-Deterministic guards bound the interpretation so a model cannot melt a seal on
-weak, absent, or contradictory evidence.
+The seal passes through hands that each hold a strict, bounded authority. No hand
+holds more than its station allows.
 
-## 3. The wax-and-condition metaphor
+| Custodian | Authority | Bound By |
+| --- | --- | --- |
+| The Author | Seals a payload, binds the condition once, may entrust before opening | Cannot open early; cannot rewrite a bound condition |
+| The Condition | The immutable promise carved into the vault | Fixed at binding, never editable thereafter |
+| The Keepers (GenLayer validators) | Read public evidence, independently judge whether the condition is met | Must agree on the outcome; deterministic guards bound the judgment |
+| The Recipient | Opens the seal after release, reads the payload once | Only after release; only the named keeper |
 
-A seal is wax pressed with a sigil. Wax red is reserved for active, unmelted
-seals. As keepers read public evidence, the wax warms and softens; when the
-world agrees, the wax cracks and is releasable; when the recipient opens it, the
-wax melts once and forever. The condition is the immutable promise carved into
-the vault: written once at the Binding Altar, it can never change.
+Nothing of value is escrowed. There is no deposit and no transfer. Users pay only
+network fees. Custody here is over a decision, not over funds.
 
-States: sealed, listening, nearing, releasable, opened, dormant. State is shown
-by wax integrity, the gauge ring, and an engraved label, never by color alone.
+---
 
-## 4. The ritual journey
+## The Mechanism
 
-The chamber holds six ceremonial stations, navigated by the Censer (a swinging
-brass incense burner), not a header:
+### Role in GenLayer
 
-1. The Antechamber. A single closed bronze vault on a plinth. Approach it to
-   begin.
-2. The Sealing Table. Write the message on parchment, choose a sigil, pour the
-   wax.
-3. The Binding Altar. Write the immutable condition into a recessed stone groove
-   ringed by slow-turning gauges. Bind it.
-4. The Vault Hall. The main space: a hall of bronze vaults, each with engraved
-   controls to check the world, read the condition, open, or entrust.
-5. The Melt. The one-time, full-screen ceremony where the wax liquefies, the
-   sigil cracks, the door swings, and the released message rises.
-6. The Keeper's Ledger. A heavy parchment ledger of opened records with their
-   evidence trail, exportable as a rubbing, a pressed copy, or read aloud.
+Deadhand is a condition oracle and a gatekeeper. Its load-bearing question is not
+"what time is it" but "did this real-world event actually happen, given messy
+public evidence". That judgment is subjective and reproducible, and no single
+server should own it.
 
-Identity is the Signet, a cold signet ring that warms with candlelight once
-taken up. The footer is replaced by the Drip Line, a line of cooling wax along
-the bottom edge.
+When a vault is checked, the Intelligent Contract's `check_world` call asks
+GenLayer validators to independently read the supplied public evidence and decide
+whether the bound condition is truly met. Each validator reruns the
+interpretation. Only when they agree does the shared state advance toward
+release. Consensus makes the release canonical and tamper resistant: a lone node
+cannot fake the world and force a seal open.
 
-## 5. Intelligent Contract concept
+### Deterministic Guards
 
-`contracts/DeadhandContract.py` models sealed payloads, immutable conditions,
-world-checks, releases, and ledger entries. Methods:
+The interpretation is fenced so the model can never melt a seal on weak, absent,
+or contradictory evidence.
 
-- `seal` creates a sealed vault with a payload commitment (never plaintext),
-  recipient, sigil, condition visibility, and sealed-at time.
-- `bind_condition` binds immutable natural-language condition text. Once bound,
-  it cannot change.
-- `check_world` is the non-deterministic call. Validators read the public
-  evidence and independently decide whether the condition is met. Comparative
-  validation reruns the judgment and requires agreement on the boolean "met" and
-  a coarse closeness band, so no single node can force a release. A deterministic
-  evidence-overlap backstop must find a real textual trace before any release.
+- Condition text is immutable once bound. `bind_condition` refuses to change a
+  condition that is already set.
+- Only the recipient opens, and only after release. `open_seal` is recipient-only
+  and releasable-only.
+- `check_world` is user-triggered and rate-limited (a coarse minimum interval
+  between checks on one vault, measured by a caller-supplied clock, never a
+  server clock).
+- Compact fields are stored, not raw plaintext. The payload commitment is a
+  committed reference held shut until opening, revealed exactly once.
+- Validation is comparative, not byte-equality. Validators must agree on the
+  boolean `met` and on a coarse closeness band (cold, warm, hot). Prose rationale
+  is never required to match word for word.
+- A deterministic evidence-overlap backstop must find a real textual trace linking
+  the evidence to the condition before any release is allowed.
+- State is derived deterministically from the agreed decision plus the backstop,
+  never from a model-chosen state word. Timestamps are passed in by the caller.
+  Errors carry `[EXPECTED]` and `[LLM_ERROR]` prefixes so validators reach
+  consensus on failure paths.
+
+### Intelligent Contract Methods
+
+`contracts/DeadhandContract.py` exposes the ceremony as contract methods:
+
+- `seal` creates a sealed vault with a payload commitment, recipient, sigil, and
+  condition visibility.
+- `bind_condition` binds the immutable natural-language condition. Once bound, it
+  cannot change.
+- `check_world` is the non-deterministic call. Validators read public evidence,
+  judge the condition, and must agree on `met` plus a closeness band.
 - `open_seal` is recipient-only and releasable-only. It reveals the payload
-  reference once and records opened-at.
-- `entrust` transfers keeper rights to another address (owner-only, pre-open).
-- `get_vault`, `get_vaults`, `get_evidence`, `get_ledger`, `get_summary` are
+  reference once and lands a ledger entry.
+- `entrust` transfers keeper rights to another address (author-only, pre-open).
+- `get_vault`, `get_vaults`, `get_evidence`, `get_ledger`, `get_summary` are read
   views. Private conditions are shrouded from non-parties.
 
-Determinism rules: timestamps are passed in by the caller, never read from a
-clock. State is derived deterministically from the agreed decision fields plus
-the backstop, never from a model-chosen state word. Errors use `[EXPECTED]` and
-`[LLM_ERROR]` prefixes so validators reach consensus on failure paths. No value
-transfer, no escrow, no deposits; users pay only network fees.
+### Verified Lifecycle
 
-## 6. Local mock mode
+The full seal, bind, check, open flow has been exercised live on Testnet
+Bradbury. A vault was created (`seal`), a condition was written (`bind_condition`),
+the keepers were asked to read the evidence (`check_world`, where GenLayer
+validators agreed an Apollo 11 style Moon-landing condition had been met), and the
+named recipient opened the released seal (`open_seal`). The lifecycle is real, not
+theoretical.
 
-The chamber runs fully offline. With no configuration, `getAdapter()` returns a
-`MockAdapter` that seeds preloaded vaults and simulates keeper readings with the
-same logic the contract uses (`utils/vaultState.ts` mirrors the contract's
-`_evidence_overlap` and state derivation). Nothing is sent anywhere; payloads
-stay in an in-memory store until a seal is opened.
+---
 
-## 7. Folder structure
+## Field Manual
 
-```
-src/
-  app/            page.tsx, layout.tsx, globals.css
-  components/
-    chamber/      Censer, DripLine, Signet, CandleField, ChamberWorld
-    stations/     Antechamber, SealingTable, BindingAltar, VaultHall, TheMelt, KeepersLedger
-    vault/        Vault, WaxSeal, Sigil, GaugeRing, EngravedPanel
-    ui/           RitualButton, InkInput, StonePanel, EngraveText
-  lib/genlayer/   mockAdapter.ts, contractAdapter.ts, types.ts, index.ts
-  store/          useChamberStore.ts
-  data/           mockConditions.ts, mockEvidence.ts
-  utils/          format.ts, vaultState.ts
-contracts/
-  DeadhandContract.py
-scripts/
-  deploy.mjs, livecheck.mjs
-```
+### Reading (no wallet)
 
-## 8. Running locally
+Browsing works with no wallet. You can read public conditions, inspect vaults, and
+review the Keeper's Ledger without connecting anything.
+
+### Writing (wallet required)
+
+To seal a vault, bind a condition, or check the world, connect a MetaMask wallet
+funded from the GenLayer Bradbury faucet:
+
+- Faucet: https://testnet-faucet.genlayer.foundation/
+
+### Run Locally
+
+The chamber runs fully offline in mock mode by default. `getAdapter()` returns a
+`MockAdapter` that seeds preloaded vaults and mirrors the contract's evidence and
+state logic, so nothing leaves your machine until a real contract is configured.
 
 ```
 npm install
 npm run dev
 ```
 
-Open the printed local URL. The chamber starts in mock mode with preloaded
-vaults, including one that is ready to melt for the demo.
-
-To build the static export:
+Build the static export (written to `out/` for static hosting on Cloudflare
+Pages):
 
 ```
 npm run build
 ```
 
-The output is written to `out/` for static hosting.
+### Contract Checks
 
-## 9. Connecting a real contract
+Lint the Intelligent Contract and run the direct-mode tests:
 
-1. Put a funded key in `.env.deploy` (gitignored):
-   ```
-   GENLAYER_PRIVATE_KEY=...
-   GENLAYER_NETWORK=bradbury
-   ```
-2. Deploy: `node scripts/deploy.mjs`. The deployed address is written back to
-   `.env.deploy` as `DEADHAND_CONTRACT_ADDRESS`.
-3. Point the frontend at it in `.env.local`:
-   ```
-   NEXT_PUBLIC_DEADHAND_MODE=contract
-   NEXT_PUBLIC_DEADHAND_CONTRACT=0x...
-   NEXT_PUBLIC_DEADHAND_NETWORK=bradbury
-   ```
-4. Rebuild so the address is baked into the export. The UI imports only the
-   adapter interface, so swapping mock for contract touches no UI code.
-5. Verify with `node scripts/livecheck.mjs`.
+```
+genvm-lint check contracts/DeadhandContract.py --json
+python -m pytest tests/direct/ -p gltest_direct -q
+```
 
-The Signet supports MetaMask (with the GenLayer Snap) and falls back to a
-browser burner key for gasless networks.
+### Connecting a Real Contract
 
-## 10. Design principles
+Contract mode is selected by environment variables read in
+`src/lib/genlayer/index.ts`:
 
-- Solemn, ceremonial, suspenseful, premium, literary, quiet.
-- A single candlelit chamber, not pages. No header, no footer, no dashboard,
-  no card grid.
-- Named objects are honored: the Censer, the Signet, the Drip Line, the six
-  stations, the wax-seal-and-condition metaphor, the one-time Melt.
-- State never relies on color alone. Keyboard navigation, aria labels, focus
-  states, and reduced-motion support throughout.
-- Never approved, rejected, verdict, vote, or DAO. Only sealed, bound, nearing,
-  releasable, opened, melted, confirmed.
+```
+NEXT_PUBLIC_DEADHAND_MODE=contract
+NEXT_PUBLIC_DEADHAND_CONTRACT=0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd
+NEXT_PUBLIC_DEADHAND_NETWORK=bradbury
+```
+
+To deploy your own, place a funded key in `.env.deploy` (gitignored, never
+committed):
+
+```
+GENLAYER_PRIVATE_KEY=...
+GENLAYER_NETWORK=bradbury
+```
+
+Then run `node scripts/deploy.mjs`. The deployed address is written back as
+`DEADHAND_CONTRACT_ADDRESS`. Point the frontend at it, rebuild, and verify with
+`node scripts/livecheck.mjs`. The UI imports only the adapter interface, so
+swapping mock for contract touches no UI code.
+
+### Stack
+
+Next.js 14, TypeScript, Tailwind CSS, Framer Motion, Zustand, and genlayer-js.
+Shipped as a static export on Cloudflare Pages.
+
+---
+
+## Provenance
+
+| Field | Record |
+| --- | --- |
+| Live application | https://deadhand.pages.dev |
+| Network | GenLayer Testnet Bradbury |
+| Contract address | `0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd` |
+| Contract on explorer | https://explorer-bradbury.genlayer.com/address/0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd |
+| Faucet | https://testnet-faucet.genlayer.foundation/ |
+| Contract source | `contracts/DeadhandContract.py` |
+
+> The seal is only as honest as the hands that refuse to break it early.
+> Deadhand gives that refusal to consensus, and keeps the words until the world
+> is ready to hear them.
