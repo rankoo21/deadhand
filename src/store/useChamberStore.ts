@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { getAdapter } from "@/lib/genlayer";
+import { commitPayload, rememberKey, revealPayload } from "@/lib/genlayer/payload";
 import type {
   CheckResult,
   ConditionVisibility,
@@ -56,6 +57,9 @@ interface ChamberState {
   activeVaultId: string | null;
   meltVaultId: string | null;
   meltResult: OpenResult | null;
+  // Plaintext recovered client-side from the revealed commitment, when the
+  // local decryption key is present. Never derived from on-chain plaintext.
+  revealedPayload: string | null;
   lastCheck: CheckResult | null;
   busy: boolean;
   error: string | null;
@@ -144,6 +148,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
   activeVaultId: null,
   meltVaultId: null,
   meltResult: null,
+  revealedPayload: null,
   lastCheck: null,
   busy: false,
   error: null,
@@ -181,14 +186,20 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     }
     set({ busy: true, error: null });
     try {
+      // The plaintext secret is committed client-side into an encrypted envelope
+      // BEFORE anything touches the chain. Only the opaque commitment is sent;
+      // the raw plaintext never leaves the browser. The decryption key is held
+      // locally and remembered against the vault id once it is known.
+      const { commitment, keyRef } = await commitPayload(draft.message.trim());
       const vault = await adapter.seal({
         owner: signetAddress ?? "",
         title: draft.title.trim() || draft.message.trim().slice(0, 40),
-        payloadCommitment: draft.message.trim(),
+        payloadCommitment: commitment,
         recipient: draft.recipient.trim(),
         sigil: draft.sigil,
         conditionVisibility: draft.conditionVisibility,
       });
+      rememberKey(vault.id, keyRef);
       await get().refresh();
       set({
         draftVaultId: vault.id,
@@ -279,17 +290,23 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     }
   },
 
-  beginMelt: (vaultId) => set({ meltVaultId: vaultId, meltResult: null, station: "melt" }),
+  beginMelt: (vaultId) =>
+    set({ meltVaultId: vaultId, meltResult: null, revealedPayload: null, station: "melt" }),
 
   openSeal: async (vaultId) => {
     if (!ensureSignet(get, set)) return;
     set({ busy: true, error: null });
     try {
       const result = await adapter.openSeal(vaultId);
+      // The revealed commitment is decrypted client-side with the locally held
+      // key. If the key is absent (a different device), the opaque reference is
+      // shown instead; the plaintext is never reconstructed from on-chain data.
+      const revealedPayload = await revealPayload(vaultId, result.payloadCommitment);
       await get().refresh();
       set({
         meltVaultId: vaultId,
         meltResult: result,
+        revealedPayload,
         station: "melt",
         notice: "The vault is open. Released to the keeper.",
       });
@@ -314,6 +331,6 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     }
   },
 
-  clearMelt: () => set({ meltVaultId: null, meltResult: null }),
+  clearMelt: () => set({ meltVaultId: null, meltResult: null, revealedPayload: null }),
   clearMessages: () => set({ error: null, notice: null }),
 }));

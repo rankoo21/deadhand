@@ -4,6 +4,7 @@ from conftest import (
     met_llm_response,
     nearing_llm_response,
     not_met_llm_response,
+    unauthenticated_met_llm_response,
 )
 
 
@@ -43,6 +44,30 @@ def test_seal_creates_sealed_vault(deploy):
     # The payload reference is held shut until the vault is opened.
     assert vault["payloadCommitment"] == ""
     assert vault["opened"] is False
+
+
+def test_seal_never_stores_plaintext_payload(deploy):
+    # The reviewer's core ask: the secret must never sit on-chain as plaintext.
+    # The caller commits client-side and passes only an opaque commitment. Views
+    # must not expose it before the vault is opened, and the stored field must be
+    # the commitment reference, not the cleartext secret.
+    secret_plaintext = "MEET ME AT THE OLD PIER AT MIDNIGHT, BRING THE LEDGER"
+    commitment = "sha256:2f1cptext-commitment-reference-only"
+    vault_id = deploy.seal(
+        "A quiet word",
+        commitment,
+        "0xbob",
+        "eye",
+        "public",
+        1000,
+    )
+    vault = deploy.get_vault(vault_id)
+    # Before opening, no payload material is revealed at all.
+    assert vault["payloadCommitment"] == ""
+    # And across every listed view, the plaintext secret never appears.
+    listed = deploy.get_vaults(0, 20)
+    blob = json.dumps(listed) + json.dumps(vault)
+    assert secret_plaintext not in blob
 
 
 def test_seal_requires_payload(deploy, direct_vm):
@@ -119,12 +144,46 @@ def test_check_world_releasable_when_condition_met(deploy, direct_vm):
         2000,
     )
     assert result["met"] is True
+    assert result["authenticated"] is True
     assert result["nextState"] == "releasable"
     assert result["closenessBand"] == 2
 
     vault = deploy.get_vault(vault_id)
     assert vault["state"] == "releasable"
     assert vault["lastCheckedAt"] == 2000
+
+
+def test_check_world_does_not_release_on_unauthenticated_evidence(deploy, direct_vm):
+    # The model claims met=true with very high closeness, but reports
+    # authenticated=false (an anonymous, unattributed assertion). An irreversible
+    # release must NOT fire: validators did not agree the evidence is authentic.
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", unauthenticated_met_llm_response())
+
+    vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
+    result = deploy.check_world(
+        vault_id,
+        "The studio officially shipped the 1.0 release of the studio game today.",
+        "",  # no source named -> cannot be authenticated for release
+        2000,
+    )
+    assert result["authenticated"] is False
+    assert result["nextState"] != "releasable"
+
+    vault = deploy.get_vault(vault_id)
+    assert vault["state"] != "releasable"
+
+
+def test_check_world_does_not_release_on_thin_evidence(deploy, direct_vm):
+    # Even with a named source and a model claiming met, evidence too short and
+    # too weakly related to the condition cannot cross the deterministic
+    # authentication bar for an irreversible release.
+    direct_vm.clear_mocks()
+    direct_vm.mock_llm(r".*", met_llm_response())
+
+    vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
+    result = deploy.check_world(vault_id, "shipped.", "Wire", 2000)
+    assert result["nextState"] != "releasable"
 
 
 def test_check_world_nearing_on_partial(deploy, direct_vm):

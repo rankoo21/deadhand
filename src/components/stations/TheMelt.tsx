@@ -16,6 +16,7 @@ export function TheMelt() {
   const vaults = useChamberStore((s) => s.vaults);
   const meltVaultId = useChamberStore((s) => s.meltVaultId);
   const meltResult = useChamberStore((s) => s.meltResult);
+  const revealedPayload = useChamberStore((s) => s.revealedPayload);
   const evidenceByVault = useChamberStore((s) => s.evidenceByVault);
   const openSeal = useChamberStore((s) => s.openSeal);
   const setStation = useChamberStore((s) => s.setStation);
@@ -53,7 +54,11 @@ export function TheMelt() {
   }
 
   const trail = (evidenceByVault[vault.id] ?? []).map((e) => e.sourceLabel);
-  const released = meltResult?.payloadCommitment ?? vault.payloadCommitment;
+  // Prefer the client-side decrypted plaintext. Fall back to the opaque
+  // commitment reference only when the local key is not on this device: the
+  // secret is never reconstructed from on-chain plaintext (there is none).
+  const released =
+    revealedPayload || meltResult?.payloadCommitment || vault.payloadCommitment;
 
   const beginMelt = async () => {
     setPhase("melting");

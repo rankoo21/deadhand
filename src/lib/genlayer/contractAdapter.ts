@@ -1,4 +1,4 @@
-import { createClient } from "genlayer-js";
+import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet, testnetBradbury, localnet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import type {
@@ -23,11 +23,12 @@ import type {
 //   3. Optionally set NEXT_PUBLIC_DEADHAND_NETWORK (studionet | bradbury | localnet).
 //
 // Wallet model: every visitor brings their own browser wallet (MetaMask with
-// the GenLayer Snap). That connected wallet is the only signet. There is no
-// in-browser burner identity and no key is ever generated or stored. Reads use
-// an account-less client so the chamber renders and can be viewed with no wallet
-// connected. Writes require a connected wallet. The deploy key in .env.deploy is
-// server-side only.
+// the GenLayer Snap) to WRITE. That connected wallet is the only signet for
+// writes. Reads use a client that always carries an unfunded burner account
+// (persisted in localStorage, or a fresh ephemeral account when storage is
+// unavailable) because genlayer-js refuses any contract call without an account
+// attached. The read burner is never used to sign a write. The deploy key in
+// .env.deploy is server-side only.
 
 type AnyClient = ReturnType<typeof createClient>;
 
@@ -86,6 +87,7 @@ export class ContractAdapter implements DeadhandAdapter {
   private client: AnyClient | null = null;
   private walletAddress: string | null = null;
   private usingWallet = false;
+  private readAccount: ReturnType<typeof createAccount> | null = null;
 
   constructor(config: ContractAdapterConfig) {
     this.config = config;
@@ -94,12 +96,44 @@ export class ContractAdapter implements DeadhandAdapter {
 
   // -- identity (the signet) ------------------------------------------
 
-  // A read-only client with no account. Used for every view call so the
-  // chamber can be viewed with no wallet connected. Once a wallet connects,
-  // connectWallet replaces this.client with the wallet-backed client.
+  // A stable read-only account for view calls. genlayer-js refuses to call any
+  // contract function without an account attached ("No account set..."), even
+  // for reads, so the read client is ALWAYS given an account. We reuse a burner
+  // key persisted in localStorage when available, otherwise fall back to a
+  // freshly generated ephemeral account for the current session. This burner is
+  // never funded and is used only to satisfy the read path; writes still require
+  // a real connected wallet via connectWallet.
+  private readonly READ_KEY_STORAGE = "deadhand.readBurnerKey";
+
+  private ensureReadAccount(): ReturnType<typeof createAccount> {
+    if (this.readAccount) return this.readAccount;
+    let pk: string | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        pk = window.localStorage.getItem(this.READ_KEY_STORAGE);
+        if (!pk) {
+          pk = generatePrivateKey() as string;
+          window.localStorage.setItem(this.READ_KEY_STORAGE, pk);
+        }
+      } catch {
+        pk = null;
+      }
+    }
+    if (!pk) {
+      // No storage (SSR/build) or it failed: a fresh ephemeral key per session.
+      pk = generatePrivateKey() as string;
+    }
+    this.readAccount = createAccount(pk as `0x${string}`);
+    return this.readAccount;
+  }
+
+  // A read client that ALWAYS has an account. Used for every view call so the
+  // chamber can be viewed with no wallet connected, without triggering the
+  // "No account set" error. Once a wallet connects, connectWallet replaces
+  // this.client with the wallet-backed client.
   private getReadClient(): AnyClient {
     if (this.client) return this.client;
-    this.client = createClient({ chain: this.chain });
+    this.client = createClient({ chain: this.chain, account: this.ensureReadAccount() });
     return this.client;
   }
 

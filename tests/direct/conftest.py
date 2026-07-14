@@ -25,9 +25,10 @@ CONTRACT = str(Path(__file__).resolve().parents[2] / "contracts" / "DeadhandCont
 
 
 def met_llm_response() -> str:
-    """A keeper interpretation that confirms the condition is met."""
+    """A keeper interpretation that authenticates and confirms the condition."""
     return json.dumps(
         {
+            "authenticated": True,
             "met": True,
             "closeness": 92,
             "rationale": "The evidence states the studio officially shipped its 1.0 release.",
@@ -39,6 +40,7 @@ def nearing_llm_response() -> str:
     """A keeper interpretation that sees the condition drawing near but unmet."""
     return json.dumps(
         {
+            "authenticated": True,
             "met": False,
             "closeness": 55,
             "rationale": "The evidence mentions an upcoming release but no confirmation yet.",
@@ -50,9 +52,24 @@ def not_met_llm_response() -> str:
     """A keeper interpretation that finds no confirmation."""
     return json.dumps(
         {
+            "authenticated": False,
             "met": False,
             "closeness": 8,
             "rationale": "The evidence does not confirm the condition.",
+        }
+    )
+
+
+def unauthenticated_met_llm_response() -> str:
+    """A model that CLAIMS the condition is met with high closeness but cannot
+    authenticate it. The deterministic gate and the agreed authenticated flag
+    must still block an irreversible release on weak or unattributed evidence."""
+    return json.dumps(
+        {
+            "authenticated": False,
+            "met": True,
+            "closeness": 96,
+            "rationale": "An anonymous post asserts it happened, but nothing is attributed.",
         }
     )
 

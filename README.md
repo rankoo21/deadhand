@@ -4,7 +4,7 @@
 
 Some words should wait for the world.
 
-[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-8b0000?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd)
+[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-8b0000?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0xA075679ad3004D87eEAf583CE60208f57Ee4D38F)
 [![chainId](https://img.shields.io/badge/chainId-4221-2d2d2d?style=flat-square)](https://explorer-bradbury.genlayer.com)
 [![Status](https://img.shields.io/badge/Status-live-2e7d32?style=flat-square)](https://deadhand.pages.dev)
 [![Contract](https://img.shields.io/badge/Contract-Python_GenVM-3776ab?style=flat-square)](contracts/DeadhandContract.py)
@@ -18,10 +18,12 @@ Deadhand is deployed and exercised on GenLayer Testnet Bradbury. The full lifecy
 
 | Item | Value |
 | --- | --- |
-| Contract | [0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd](https://explorer-bradbury.genlayer.com/address/0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd) |
+| Contract | [0xA075679ad3004D87eEAf583CE60208f57Ee4D38F](https://explorer-bradbury.genlayer.com/address/0xA075679ad3004D87eEAf583CE60208f57Ee4D38F) |
 | Live app | [deadhand.pages.dev](https://deadhand.pages.dev) |
 
-Verified lifecycle on Bradbury:
+The payload is never stored as readable plaintext. At seal time the contract holds only a commitment (an opaque client-side reference or ciphertext); views keep it shrouded and the readable reference is disclosed only on the `open_seal` path, after release, to the recipient. `check_world` does not release on caller-supplied prose: validators independently re-judge the evidence and must agree comparatively on the boolean `met`, on an independent `authenticated` finding, and on a coarse closeness band, backed by a deterministic authentication gate. There is no byte-equality on model prose.
+
+The current contract was freshly redeployed (payload commitment storage plus authenticated release consensus). The lifecycle transactions below were exercised end to end on a prior deployment of the same contract logic and remain verifiable on the explorer:
 
 | Step | Method | Transaction |
 | --- | --- | --- |
@@ -88,7 +90,7 @@ Contract mode is selected by environment variables read in `src/lib/genlayer/ind
 
 ```
 NEXT_PUBLIC_DEADHAND_MODE=contract
-NEXT_PUBLIC_DEADHAND_CONTRACT=0xF6926D4e4A67dF1a65dbe160072a00950C67dFBd
+NEXT_PUBLIC_DEADHAND_CONTRACT=0xA075679ad3004D87eEAf583CE60208f57Ee4D38F
 NEXT_PUBLIC_DEADHAND_NETWORK=bradbury
 ```
 
