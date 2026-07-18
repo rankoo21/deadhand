@@ -44,8 +44,7 @@ export const SIGIL_LABELS: Record<SigilStyle, string> = {
 };
 
 export const VISIBILITY_LABELS: Record<ConditionVisibility, string> = {
-  public: "Open faced",
-  private: "Shrouded",
+  public: "Public condition",
 };
 
 export function makeId(prefix: string): string {

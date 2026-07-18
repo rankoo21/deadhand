@@ -23,6 +23,30 @@ os.unlink = _tolerant_unlink
 
 CONTRACT = str(Path(__file__).resolve().parents[2] / "contracts" / "DeadhandContract.py")
 
+SOURCE_MET = "https://evidence.example/release"
+SOURCE_NEAR = "https://evidence.example/upcoming"
+SOURCE_NOISE = "https://evidence.example/noise"
+SOURCE_THIN = "https://evidence.example/thin"
+
+
+def mock_public_sources(direct_vm):
+    direct_vm.mock_web(
+        r".*evidence\.example/release.*",
+        {"status": 200, "body": "The studio officially shipped the 1.0 release of the studio game today."},
+    )
+    direct_vm.mock_web(
+        r".*evidence\.example/upcoming.*",
+        {"status": 200, "body": "The studio announced an upcoming 1.0 release window for the studio game."},
+    )
+    direct_vm.mock_web(
+        r".*evidence\.example/noise.*",
+        {"status": 200, "body": "Completely different words about gardening weather and breakfast."},
+    )
+    direct_vm.mock_web(
+        r".*evidence\.example/thin.*",
+        {"status": 200, "body": "shipped."},
+    )
+
 
 def met_llm_response() -> str:
     """A keeper interpretation that authenticates and confirms the condition."""
@@ -76,9 +100,17 @@ def unauthenticated_met_llm_response() -> str:
 
 @pytest.fixture
 def deploy(direct_deploy, direct_vm, direct_alice):
-    """Deploy the Deadhand contract with alice as the contract owner and a sane
-    default mock LLM (no confirmation), so tests opt into a release explicitly."""
+    """Deploy with stable public-source mocks that survive test clear_mocks()."""
     contract = direct_deploy(CONTRACT)
     direct_vm.sender = direct_alice
+
+    original_clear = direct_vm.clear_mocks
+
+    def clear_and_restore_sources():
+        original_clear()
+        mock_public_sources(direct_vm)
+
+    direct_vm.clear_mocks = clear_and_restore_sources
+    direct_vm.clear_mocks()
     direct_vm.mock_llm(r".*", not_met_llm_response())
     return contract

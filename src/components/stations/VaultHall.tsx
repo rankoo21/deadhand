@@ -94,7 +94,7 @@ export function VaultHall() {
 
   const [flare, setFlare] = useState(false);
   const [checkingId, setCheckingId] = useState<string | null>(null);
-  const [evidence, setEvidence] = useState("");
+  const [sourceUri, setSourceUri] = useState("");
   const [sourceLabel, setSourceLabel] = useState("");
   const [revealCondition, setRevealCondition] = useState<Record<string, boolean>>({});
   const [entrustOpen, setEntrustOpen] = useState(false);
@@ -112,10 +112,11 @@ export function VaultHall() {
   };
 
   const submitCheck = async (vault: VaultModel) => {
-    const ev = evidence.trim() || strongEvidenceFor(vault.conditionText).snapshot;
-    const label = sourceLabel.trim() || strongEvidenceFor(vault.conditionText).label;
-    await checkWorld(vault.id, ev, label);
-    setEvidence("");
+    const template = strongEvidenceFor(vault.conditionText);
+    const uri = sourceUri.trim() || template.sourceUri;
+    const label = sourceLabel.trim() || template.label;
+    await checkWorld(vault.id, uri, label);
+    setSourceUri("");
     setSourceLabel("");
     setCheckingId(null);
   };
@@ -249,22 +250,23 @@ export function VaultHall() {
                         Let the keepers read a public trace
                       </p>
                       <InkInput
-                        ariaLabel="Public evidence snapshot for the world-check"
+                        ariaLabel="Public HTTPS source for the world-check"
                         variant="groove"
-                        multiline
-                        rows={3}
                         maxLength={2000}
-                        value={evidence}
-                        onChange={setEvidence}
-                        placeholder="Paste a public evidence snapshot, or leave blank to use a sample trace."
+                        value={sourceUri}
+                        onChange={setSourceUri}
+                        placeholder="https://official-source.example/public-record"
                       />
+                      <p className="mt-2 font-display text-[0.68rem] italic text-[rgba(232,224,207,0.5)]">
+                        The contract fetches this page itself. Pasted claims cannot unlock a seal.
+                      </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {EVIDENCE_TEMPLATES.slice(0, 4).map((t) => (
                           <button
                             key={t.label}
                             type="button"
                             onClick={() => {
-                              setEvidence(t.snapshot);
+                              setSourceUri(t.sourceUri);
                               setSourceLabel(t.label);
                             }}
                             className="focus-ring rounded-sm border border-[rgba(156,107,60,0.3)] px-3 py-1.5 font-display text-[0.64rem] uppercase tracking-[0.18em] text-[rgba(232,224,207,0.65)] transition-colors hover:border-[rgba(156,107,60,0.7)]"

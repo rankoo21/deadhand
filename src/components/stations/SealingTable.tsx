@@ -19,8 +19,11 @@ export function SealingTable() {
   const busy = useChamberStore((s) => s.busy);
 
   const visibilities: { key: ConditionVisibility; label: string; hint: string }[] = [
-    { key: "public", label: "Open faced", hint: "The condition is read in the open." },
-    { key: "private", label: "Shrouded", hint: "Only a private hint shows until opened." },
+    {
+      key: "public",
+      label: "Public condition",
+      hint: "Validators must read the release condition in the open. The sealed message remains encrypted.",
+    },
   ];
 
   return (

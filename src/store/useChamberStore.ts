@@ -76,7 +76,7 @@ interface ChamberState {
   pourTheWax: () => Promise<void>;
   bindCondition: (conditionText: string) => Promise<void>;
   setActiveVault: (id: string | null) => void;
-  checkWorld: (vaultId: string, evidence: string, sourceLabel: string) => Promise<void>;
+  checkWorld: (vaultId: string, sourceUri: string, sourceLabel: string) => Promise<void>;
   checkTheHall: () => Promise<void>;
   beginMelt: (vaultId: string) => void;
   openSeal: (vaultId: string) => Promise<void>;
@@ -244,11 +244,11 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
 
   setActiveVault: (id) => set({ activeVaultId: id }),
 
-  checkWorld: async (vaultId, evidence, sourceLabel) => {
+  checkWorld: async (vaultId, sourceUri, sourceLabel) => {
     if (!ensureSignet(get, set)) return;
     set({ busy: true, error: null });
     try {
-      const result = await adapter.checkWorld({ vaultId, evidence, sourceLabel });
+      const result = await adapter.checkWorld({ vaultId, sourceUri, sourceLabel });
       await get().refresh();
       set({ lastCheck: result, notice: result.note });
     } catch (e) {
@@ -274,11 +274,11 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
         // Re-evaluate against the most recent evidence the keepers have read.
         const trail = evidenceByVault[v.id] ?? [];
         const last = trail[trail.length - 1];
-        const evidence = last?.snapshot ?? "";
+        const sourceUri = last?.sourceUri ?? "";
         const label = last?.sourceLabel ?? "Hall sweep";
-        if (!evidence) continue;
+        if (!sourceUri) continue;
         try {
-          await adapter.checkWorld({ vaultId: v.id, evidence, sourceLabel: label });
+          await adapter.checkWorld({ vaultId: v.id, sourceUri, sourceLabel: label });
         } catch {
           // a single vault failing should not stop the candle flare
         }

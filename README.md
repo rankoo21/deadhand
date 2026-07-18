@@ -4,7 +4,7 @@
 
 Some words should wait for the world.
 
-[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-8b0000?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0xA075679ad3004D87eEAf583CE60208f57Ee4D38F)
+[![Network](https://img.shields.io/badge/Network-GenLayer_Bradbury-8b0000?style=flat-square)](https://explorer-bradbury.genlayer.com/address/0x9609634A80b12cD46feB96223667E2c42FBeef5a)
 [![chainId](https://img.shields.io/badge/chainId-4221-2d2d2d?style=flat-square)](https://explorer-bradbury.genlayer.com)
 [![Status](https://img.shields.io/badge/Status-live-2e7d32?style=flat-square)](https://deadhand.pages.dev)
 [![Contract](https://img.shields.io/badge/Contract-Python_GenVM-3776ab?style=flat-square)](contracts/DeadhandContract.py)
@@ -14,23 +14,20 @@ Some words should wait for the world.
 
 ## On-chain proof
 
-Deadhand is deployed and exercised on GenLayer Testnet Bradbury. The full lifecycle below is real and verifiable on the explorer.
+- **Contract:** [`0x9609634A80b12cD46feB96223667E2c42FBeef5a`](https://explorer-bradbury.genlayer.com/address/0x9609634A80b12cD46feB96223667E2c42FBeef5a)
+- **Live app:** [deadhand.pages.dev](https://deadhand.pages.dev)
+- **Validation:** `genvm-lint` passes; **32 direct tests pass**.
+- **Persisted state:** 1 vault, 1 evidence record, 0 opened vaults.
 
-| Item | Value |
+| Action | Bradbury proof |
 | --- | --- |
-| Contract | [0xA075679ad3004D87eEAf583CE60208f57Ee4D38F](https://explorer-bradbury.genlayer.com/address/0xA075679ad3004D87eEAf583CE60208f57Ee4D38F) |
-| Live app | [deadhand.pages.dev](https://deadhand.pages.dev) |
+| Seal encrypted commitment | [`0x2ad43327...9d0f98`](https://explorer-bradbury.genlayer.com/tx/0x2ad433273ea6f87c593ec96145f0e17e30674c83b004fd90afbbb518f59d0f98) |
+| Bind public condition | [`0x2e0993e6...845723a`](https://explorer-bradbury.genlayer.com/tx/0x2e0993e67b0d47085f2140debd1a8555fb0a3caeb23c71dcb4fbb6c19845723a) |
+| Independently fetch and check evidence | [`0x44f9ce14...81a397`](https://explorer-bradbury.genlayer.com/tx/0x44f9ce14de0d02705719f9f0df95684a490589a70aa0f57815093b96c981a397) |
 
-The payload is never stored as readable plaintext. At seal time the contract holds only a commitment (an opaque client-side reference or ciphertext); views keep it shrouded and the readable reference is disclosed only on the `open_seal` path, after release, to the recipient. `check_world` does not release on caller-supplied prose: validators independently re-judge the evidence and must agree comparatively on the boolean `met`, on an independent `authenticated` finding, and on a coarse closeness band, backed by a deterministic authentication gate. There is no byte-equality on model prose.
+### Reviewer remediation
 
-The current contract was freshly redeployed (payload commitment storage plus authenticated release consensus). The lifecycle transactions below were exercised end to end on a prior deployment of the same contract logic and remain verifiable on the explorer:
-
-| Step | Method | Transaction |
-| --- | --- | --- |
-| Seal a vault | `seal` | [0xc87a7f...52a4](https://explorer-bradbury.genlayer.com/tx/0xc87a7fe1a7da7b880d1d95f2af3915b9c0b8f8506b3b0c4692fc8cc5906752a4) |
-| Bind the condition | `bind_condition` | [0x538660...44f3b](https://explorer-bradbury.genlayer.com/tx/0x5386605e7814b7220388f7f2489d761ed45d38551f3216cbca21d04eaf044f3b) |
-| Validators agreed the condition was met | `check_world` | [0x260029...eade](https://explorer-bradbury.genlayer.com/tx/0x260029e9318edf4145d33d70b3e6490df2679ed8bdbcc17547cc79f89793eade) |
-| Released to recipient | `open_seal` | [0xe0458f...031](https://explorer-bradbury.genlayer.com/tx/0xe0458f1951e0a69eb234baab5d88dfcdbaa5ba6cfd20bec953c9516f6411f031) |
+Plaintext payloads are structurally rejected. Deadhand accepts AES-GCM commitment envelopes, hash-only envelopes, and content-addressed `ipfs://` or `ar://` references. The **payload is private; the release condition is public** so validators can verify it. `check_world(vault_id, source_uri, source_label, now_ms)` makes each validator independently fetch a public HTTPS source and stores its URI, label, and fetched snapshot. The live vault correctly remained `listening` because its deterministic release gate did not pass, so no release is claimed.
 
 ## What it is
 
@@ -90,7 +87,7 @@ Contract mode is selected by environment variables read in `src/lib/genlayer/ind
 
 ```
 NEXT_PUBLIC_DEADHAND_MODE=contract
-NEXT_PUBLIC_DEADHAND_CONTRACT=0xA075679ad3004D87eEAf583CE60208f57Ee4D38F
+NEXT_PUBLIC_DEADHAND_CONTRACT=0x9609634A80b12cD46feB96223667E2c42FBeef5a
 NEXT_PUBLIC_DEADHAND_NETWORK=bradbury
 ```
 

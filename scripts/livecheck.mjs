@@ -109,7 +109,14 @@ async function main() {
 
   await write("seal", [
     "When the record is broken",
-    "sealed://livecheck-secret-reference",
+    // AES-GCM ciphertext envelope; no plaintext is sent to the contract.
+    JSON.stringify({
+      v: 1,
+      alg: "AES-GCM-256",
+      iv: "AAAAAAAAAAAAAAAA",
+      ct: "ZGVhZGhhbmQtbGl2ZWNoZWNrLWNpcGhlcnRleHQ=",
+      hash: "livecheck0123456789abcdef",
+    }),
     account.address,
     "hollowStar",
     "public",

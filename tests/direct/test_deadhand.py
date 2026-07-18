@@ -5,6 +5,10 @@ from conftest import (
     nearing_llm_response,
     not_met_llm_response,
     unauthenticated_met_llm_response,
+    SOURCE_MET,
+    SOURCE_NEAR,
+    SOURCE_NOISE,
+    SOURCE_THIN,
 )
 
 
@@ -52,7 +56,15 @@ def test_seal_never_stores_plaintext_payload(deploy):
     # must not expose it before the vault is opened, and the stored field must be
     # the commitment reference, not the cleartext secret.
     secret_plaintext = "MEET ME AT THE OLD PIER AT MIDNIGHT, BRING THE LEDGER"
-    commitment = "sha256:2f1cptext-commitment-reference-only"
+    commitment = json.dumps(
+        {
+            "v": 1,
+            "alg": "AES-GCM-256",
+            "iv": "AAAAAAAAAAAAAAAA",
+            "ct": "ZW5jcnlwdGVkLXNlY3JldC1wYXlsb2Fk",
+            "hash": "2f1c0123456789abcdef",
+        }
+    )
     vault_id = deploy.seal(
         "A quiet word",
         commitment,
@@ -68,6 +80,18 @@ def test_seal_never_stores_plaintext_payload(deploy):
     listed = deploy.get_vaults(0, 20)
     blob = json.dumps(listed) + json.dumps(vault)
     assert secret_plaintext not in blob
+
+
+def test_seal_rejects_plaintext_payload(deploy, direct_vm):
+    with direct_vm.expect_revert("Seal the payload client-side"):
+        deploy.seal(
+            "Unsafe",
+            "MEET ME AT THE OLD PIER AT MIDNIGHT",
+            "0xbob",
+            "eye",
+            "public",
+            1000,
+        )
 
 
 def test_seal_requires_payload(deploy, direct_vm):
@@ -129,20 +153,22 @@ def test_bind_condition_cannot_change(deploy, direct_vm):
 def test_check_world_requires_bound_condition(deploy, direct_vm):
     vault_id = deploy.seal("S", "ipfs://c", "0xbob", "crescent", "public", 1000)
     with direct_vm.expect_revert("Bind a condition"):
-        deploy.check_world(vault_id, "some evidence", "source", 2000)
+        deploy.check_world(vault_id, SOURCE_MET, "source", 2000)
+
+
+def test_check_world_requires_fetchable_https_source(deploy, direct_vm):
+    vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
+    with direct_vm.expect_revert("public HTTPS source"):
+        deploy.check_world(vault_id, "The studio shipped 1.0", "caller assertion", 2000)
 
 
 def test_check_world_releasable_when_condition_met(deploy, direct_vm):
     direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*evidence\.example/release.*", {"status": 200, "body": SOURCE_MET})
     direct_vm.mock_llm(r".*", met_llm_response())
 
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
-    result = deploy.check_world(
-        vault_id,
-        "The studio officially shipped the 1.0 release of the studio game today.",
-        "Press archive",
-        2000,
-    )
+    result = deploy.check_world(vault_id, SOURCE_MET, "Press archive", 2000)
     assert result["met"] is True
     assert result["authenticated"] is True
     assert result["nextState"] == "releasable"
@@ -163,7 +189,7 @@ def test_check_world_does_not_release_on_unauthenticated_evidence(deploy, direct
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
     result = deploy.check_world(
         vault_id,
-        "The studio officially shipped the 1.0 release of the studio game today.",
+        SOURCE_MET,
         "",  # no source named -> cannot be authenticated for release
         2000,
     )
@@ -182,7 +208,7 @@ def test_check_world_does_not_release_on_thin_evidence(deploy, direct_vm):
     direct_vm.mock_llm(r".*", met_llm_response())
 
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
-    result = deploy.check_world(vault_id, "shipped.", "Wire", 2000)
+    result = deploy.check_world(vault_id, SOURCE_THIN, "Wire", 2000)
     assert result["nextState"] != "releasable"
 
 
@@ -193,7 +219,7 @@ def test_check_world_nearing_on_partial(deploy, direct_vm):
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
     result = deploy.check_world(
         vault_id,
-        "The studio announced an upcoming 1.0 release window for the studio game.",
+        SOURCE_NEAR,
         "Press archive",
         2000,
     )
@@ -209,7 +235,7 @@ def test_check_world_listening_when_not_met(deploy, direct_vm):
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
     result = deploy.check_world(
         vault_id,
-        "Unrelated chatter about the weather and lunch today.",
+        SOURCE_NOISE,
         "Noise",
         2000,
     )
@@ -227,7 +253,7 @@ def test_check_world_backstop_blocks_release_without_trace(deploy, direct_vm):
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
     result = deploy.check_world(
         vault_id,
-        "Completely different words about gardening, weather, and breakfast.",
+        SOURCE_NOISE,
         "Noise",
         2000,
     )
@@ -239,7 +265,7 @@ def test_check_world_records_evidence(deploy, direct_vm):
     direct_vm.mock_llm(r".*", nearing_llm_response())
 
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
-    deploy.check_world(vault_id, "The studio teased a 1.0 release soon.", "Blog", 2000)
+    deploy.check_world(vault_id, SOURCE_NEAR, "Blog", 2000)
     trail = deploy.get_evidence(vault_id)
     assert len(trail) == 1
     assert trail[0]["sourceLabel"] == "Blog"
@@ -250,9 +276,9 @@ def test_check_world_rate_limited(deploy, direct_vm):
     direct_vm.mock_llm(r".*", not_met_llm_response())
 
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
-    deploy.check_world(vault_id, "Nothing relevant yet.", "src", 2000)
+    deploy.check_world(vault_id, SOURCE_NOISE, "src", 2000)
     with direct_vm.expect_revert("too soon"):
-        deploy.check_world(vault_id, "Still nothing.", "src", 2100)
+        deploy.check_world(vault_id, SOURCE_NOISE, "src", 2100)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +292,7 @@ def _make_releasable(deploy, direct_vm, direct_alice):
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
     deploy.check_world(
         vault_id,
-        "The studio officially shipped the 1.0 release of the studio game today.",
+        SOURCE_MET,
         "Press archive",
         2000,
     )
@@ -277,7 +303,7 @@ def test_open_seal_blocked_before_release(deploy, direct_vm):
     direct_vm.clear_mocks()
     direct_vm.mock_llm(r".*", nearing_llm_response())
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
-    deploy.check_world(vault_id, "The studio teased a 1.0 release soon.", "Blog", 2000)
+    deploy.check_world(vault_id, SOURCE_NEAR, "Blog", 2000)
     with direct_vm.expect_revert("not ready to open"):
         deploy.open_seal(vault_id, "0xtx", 3000)
 
@@ -308,7 +334,7 @@ def test_open_seal_reveals_payload_for_recipient(deploy, direct_vm, direct_alice
     deploy.bind_condition(vault_id, "When the studio ships its 1.0 release.", 1000)
     deploy.check_world(
         vault_id,
-        "The studio officially shipped the 1.0 release of the studio game today.",
+        SOURCE_MET,
         "Press archive",
         2000,
     )
@@ -340,7 +366,7 @@ def test_open_seal_cannot_open_twice(deploy, direct_vm, direct_alice):
     deploy.bind_condition(vault_id, "When the studio ships its 1.0 release.", 1000)
     deploy.check_world(
         vault_id,
-        "The studio officially shipped the 1.0 release of the studio game today.",
+        SOURCE_MET,
         "Press archive",
         2000,
     )
@@ -377,7 +403,7 @@ def test_entrust_blocked_after_open(deploy, direct_vm, direct_alice):
     deploy.bind_condition(vault_id, "When the studio ships its 1.0 release.", 1000)
     deploy.check_world(
         vault_id,
-        "The studio officially shipped the 1.0 release of the studio game today.",
+        SOURCE_MET,
         "Press archive",
         2000,
     )
@@ -387,26 +413,21 @@ def test_entrust_blocked_after_open(deploy, direct_vm, direct_alice):
 
 
 # ---------------------------------------------------------------------------
-# private condition visibility
+# public-condition boundary
 # ---------------------------------------------------------------------------
 
-def test_private_condition_shrouded_from_stranger(deploy, direct_vm, direct_bob):
-    vault_id = deploy.seal("S", "ipfs://c", "0xbob", "crescent", "private", 1000)
-    deploy.bind_condition(vault_id, "A private condition only owner knows.", 1000)
-    # Bob is the named recipient string "0xbob" but the direct_bob account hex
-    # differs, so from a stranger account the condition is shrouded.
-    direct_vm.sender = direct_bob
-    vault = deploy.get_vault(vault_id)
-    assert vault["conditionShrouded"] is True
-    assert vault["conditionText"] == ""
+def test_private_condition_mode_is_rejected(deploy, direct_vm):
+    # Validators cannot independently verify a hidden release predicate.
+    with direct_vm.expect_revert("Unknown condition visibility"):
+        deploy.seal("S", "ipfs://c", "0xbob", "crescent", "private", 1000)
 
 
-def test_private_condition_visible_to_owner(deploy):
-    vault_id = deploy.seal("S", "ipfs://c", "0xbob", "crescent", "private", 1000)
-    deploy.bind_condition(vault_id, "A private condition.", 1000)
+def test_public_condition_is_visible_for_validator_audit(deploy):
+    vault_id = deploy.seal("S", "ipfs://c", "0xbob", "crescent", "public", 1000)
+    deploy.bind_condition(vault_id, "A public condition validators can audit.", 1000)
     vault = deploy.get_vault(vault_id)
     assert vault["conditionShrouded"] is False
-    assert vault["conditionText"] == "A private condition."
+    assert vault["conditionText"] == "A public condition validators can audit."
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +449,7 @@ def test_summary_counts(deploy, direct_vm):
     direct_vm.clear_mocks()
     direct_vm.mock_llm(r".*", nearing_llm_response())
     vault_id = _seal_and_bind(deploy, "When the studio ships its 1.0 release.", 1000)
-    deploy.check_world(vault_id, "The studio teased a 1.0 release soon.", "Blog", 2000)
+    deploy.check_world(vault_id, SOURCE_NEAR, "Blog", 2000)
     summary = deploy.get_summary()
     assert summary["vaults"] == 1
     assert summary["evidence"] == 1

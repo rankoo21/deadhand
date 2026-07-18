@@ -96,34 +96,10 @@ export class ContractAdapter implements DeadhandAdapter {
 
   // -- identity (the signet) ------------------------------------------
 
-  // A stable read-only account for view calls. genlayer-js refuses to call any
-  // contract function without an account attached ("No account set..."), even
-  // for reads, so the read client is ALWAYS given an account. We reuse a burner
-  // key persisted in localStorage when available, otherwise fall back to a
-  // freshly generated ephemeral account for the current session. This burner is
-  // never funded and is used only to satisfy the read path; writes still require
-  // a real connected wallet via connectWallet.
-  private readonly READ_KEY_STORAGE = "deadhand.readBurnerKey";
-
+  // A per-session ephemeral account satisfies genlayer-js read calls. It is
+  // never persisted, funded, or used for writes.
   private ensureReadAccount(): ReturnType<typeof createAccount> {
-    if (this.readAccount) return this.readAccount;
-    let pk: string | null = null;
-    if (typeof window !== "undefined") {
-      try {
-        pk = window.localStorage.getItem(this.READ_KEY_STORAGE);
-        if (!pk) {
-          pk = generatePrivateKey() as string;
-          window.localStorage.setItem(this.READ_KEY_STORAGE, pk);
-        }
-      } catch {
-        pk = null;
-      }
-    }
-    if (!pk) {
-      // No storage (SSR/build) or it failed: a fresh ephemeral key per session.
-      pk = generatePrivateKey() as string;
-    }
-    this.readAccount = createAccount(pk as `0x${string}`);
+    if (!this.readAccount) this.readAccount = createAccount(generatePrivateKey());
     return this.readAccount;
   }
 
@@ -284,6 +260,8 @@ export class ContractAdapter implements DeadhandAdapter {
   }
 
   async bindCondition(vaultId: string, conditionText: string): Promise<Vault> {
+    // Conditions are public because validators must independently judge them.
+    // Payload confidentiality is handled separately by AES-GCM encryption.
     await this.writeReceipt("bind_condition", [vaultId, conditionText, Date.now()]);
     const vault = await this.getVault(vaultId);
     if (!vault) throw new Error("The condition was bound but could not be read back.");
@@ -293,7 +271,7 @@ export class ContractAdapter implements DeadhandAdapter {
   async checkWorld(input: CheckWorldInput): Promise<CheckResult> {
     const receipt = await this.writeReceipt("check_world", [
       input.vaultId,
-      input.evidence,
+      input.sourceUri,
       input.sourceLabel,
       Date.now(),
     ]);

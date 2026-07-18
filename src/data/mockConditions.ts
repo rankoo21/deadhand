@@ -84,7 +84,7 @@ export const PRELOADED_VAULTS: PreloadedVault[] = [
     recipient: "0xKeeperOfTheName0000000000000004",
     sigil: "eye",
     conditionText: "When the rename is publicly confirmed by the holder.",
-    conditionVisibility: "private",
+    conditionVisibility: "public",
     state: "listening",
     closeness: 22,
     sealedDaysAgo: 9,

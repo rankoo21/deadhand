@@ -11,6 +11,7 @@ import {
 import { decideCheck, bandOf } from "@/utils/vaultState";
 import { makeId, mockTxHash } from "@/utils/format";
 import { PRELOADED_VAULTS } from "@/data/mockConditions";
+import { EVIDENCE_TEMPLATES } from "@/data/mockEvidence";
 
 const MOCK_OWNER = "0xSignet_demo_chamber_author_00001";
 
@@ -130,8 +131,11 @@ export class MockAdapter implements DeadhandAdapter {
     if (vault.opened || vault.state === "opened") throw new Error("This vault is already open.");
 
     const previousState = vault.state;
-    // The mock keeper reading mirrors the contract's consensus + backstop.
-    const reading = decideCheck(vault.state, vault.conditionText, input.evidence);
+    // Mock mode resolves known demo URIs locally. Contract mode never accepts
+    // this snapshot; it fetches the public URI independently on-chain.
+    const template = EVIDENCE_TEMPLATES.find((item) => item.sourceUri === input.sourceUri);
+    const snapshot = template?.snapshot ?? input.sourceUri;
+    const reading = decideCheck(vault.state, vault.conditionText, snapshot);
 
     // A releasable vault never falls back.
     let nextState = reading.nextState;
@@ -146,8 +150,9 @@ export class MockAdapter implements DeadhandAdapter {
     const evidence: Evidence = {
       id,
       vaultId: vault.id,
-      sourceLabel: input.sourceLabel.trim() || "Snapshot",
-      snapshot: input.evidence.trim(),
+      sourceLabel: input.sourceLabel.trim() || "Public source",
+      sourceUri: input.sourceUri.trim(),
+      snapshot,
       checkedAt: Date.now(),
     };
     store.evidence.set(id, evidence);

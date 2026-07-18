@@ -18,7 +18,7 @@ export type SigilStyle =
   | "hollowStar"
   | "custom";
 
-export type ConditionVisibility = "public" | "private";
+export type ConditionVisibility = "public";
 
 // Coarse closeness band agreed by validators. 0 cold, 1 warm, 2 hot.
 export type ClosenessBand = 0 | 1 | 2;
@@ -49,6 +49,7 @@ export interface Evidence {
   id: string;
   vaultId: string;
   sourceLabel: string;
+  sourceUri: string;
   snapshot: string;
   checkedAt: number;
 }
@@ -99,7 +100,9 @@ export interface SealInput {
 
 export interface CheckWorldInput {
   vaultId: string;
-  evidence: string;
+  // Public HTTPS locator. The contract fetches its body independently; callers
+  // cannot submit an arbitrary evidence assertion that unlocks a vault.
+  sourceUri: string;
   sourceLabel: string;
 }
 

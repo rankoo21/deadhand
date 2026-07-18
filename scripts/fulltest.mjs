@@ -161,7 +161,13 @@ async function main() {
   console.log("--- Step 3: seal a vault ---");
   await write("seal", "seal", [
     "First footsteps on the Moon",
-    "sealed://deadhand-fulltest-secret-reference",
+    JSON.stringify({
+      v: 1,
+      alg: "AES-GCM-256",
+      iv: "AAAAAAAAAAAAAAAA",
+      ct: "ZGVhZGhhbmQtZnVsbHRlc3QtY2lwaGVydGV4dA==",
+      hash: "fulltest0123456789abcdef",
+    }),
     account.address, // recipient == signer so open_seal is possible in this demo
     "hollowStar",
     "public",
@@ -175,7 +181,7 @@ async function main() {
   // bind_condition(vault_id, condition_text, now_ms)
   console.log("--- Step 4: bind a natural-language condition ---");
   const conditionText =
-    "When humans have landed on the Moon and returned safely to Earth.";
+    "Apollo 11 landed humans on the Moon and returned them safely to Earth.";
   await write("bind_condition", "bind_condition", [vaultId, conditionText, Date.now()]);
   vault = await readUntil("get_vault", [vaultId], (v) => g(v, "conditionBound") === true);
   console.log(`  conditionBound: ${g(vault, "conditionBound")}`);
@@ -183,17 +189,13 @@ async function main() {
   console.log("");
 
   // --- 5. check_world (AI consensus, slow on Bradbury) ---------------------
-  // check_world(vault_id, evidence, source_label, now_ms)
-  console.log("--- Step 5: check_world (AI-consensus read of public evidence) ---");
-  const evidence =
-    "Public historical record: On July 20, 1969, NASA's Apollo 11 mission " +
-    "landed humans on the Moon. Astronauts Neil Armstrong and Buzz Aldrin " +
-    "walked on the lunar surface, and the crew returned safely to Earth on " +
-    "July 24, 1969. This Moon landing is a widely documented, confirmed event.";
+  // check_world(vault_id, source_uri, source_label, now_ms)
+  console.log("--- Step 5: check_world (validators fetch public evidence) ---");
+  const sourceUri = "https://en.wikipedia.org/wiki/Apollo_11";
   const { receipt: checkReceipt } = await write("check_world", "check_world", [
     vaultId,
-    evidence,
-    "NASA historical record",
+    sourceUri,
+    "Apollo 11 public historical record",
     Date.now(),
   ]);
   // Try to surface the decision returned by the tx if present in the receipt.
