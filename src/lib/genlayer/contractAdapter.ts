@@ -135,23 +135,29 @@ export class ContractAdapter implements DeadhandAdapter {
         "No browser wallet found. Install MetaMask (with the GenLayer Snap) to take up the signet.",
       );
     }
+    // Let client.connect() drive the handshake: it installs/activates the
+    // GenLayer Snap and pops MetaMask for account selection. Calling
+    // eth_requestAccounts first raced the Snap flow and could stop the wallet
+    // prompt from appearing at all.
+    const client = createClient({ chain: this.chain, provider: eth }) as AnyClient;
     let addr: string | undefined;
     try {
-      const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
-      addr = accounts?.[0];
+      await client.connect(networkName(this.config.network));
+      const addresses = await client.getAddresses().catch(() => [] as string[]);
+      addr = addresses?.[0] ? String(addresses[0]) : undefined;
     } catch (e: any) {
       if (e?.code === 4001) throw new Error("Wallet connection was rejected.");
-      throw new Error("Could not reach the browser wallet.");
+      throw new Error(
+        "Could not activate the GenLayer Snap in MetaMask. Approve the connection and Snap install, then try again.",
+      );
     }
-    const client = createClient({ chain: this.chain }) as AnyClient;
-    try {
-      await client.connect(networkName(this.config.network));
-      if (!addr) {
-        const addresses = await client.getAddresses().catch(() => [] as string[]);
-        addr = addresses?.[0] ? String(addresses[0]) : undefined;
+    if (!addr) {
+      try {
+        const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
+        addr = accounts?.[0];
+      } catch (e: any) {
+        if (e?.code === 4001) throw new Error("Wallet connection was rejected.");
       }
-    } catch (e) {
-      if (!addr) throw new Error("Wallet connected but no account was returned.");
     }
     if (!addr) throw new Error("Wallet connected but no account was returned.");
 
