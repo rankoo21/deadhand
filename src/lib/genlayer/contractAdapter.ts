@@ -207,6 +207,19 @@ export class ContractAdapter implements DeadhandAdapter {
     return toPlain(raw) as T;
   }
 
+  // Optional progress hook. The store sets this so the UI can show live phases
+  // of a slow Bradbury write (submitting -> waiting for consensus -> accepted)
+  // instead of a silent spinner. Never throws; failures are ignored.
+  onPhase: ((phase: string, detail?: string) => void) | null = null;
+
+  private emit(phase: string, detail?: string): void {
+    try {
+      this.onPhase?.(phase, detail);
+    } catch {
+      /* progress reporting must never break a write */
+    }
+  }
+
   private async writeReceipt(functionName: string, args: unknown[]): Promise<any> {
     const client = this.getWriteClient();
     // Bradbury occasionally reverts a tx transiently at the consensus layer.
@@ -214,22 +227,30 @@ export class ContractAdapter implements DeadhandAdapter {
     let lastErr: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        this.emit(
+          attempt === 0 ? "submitting" : "resubmitting",
+          "Waiting for you to sign in MetaMask.",
+        );
         const hash = await client.writeContract({
           address: this.address,
           functionName,
           args: args as any,
           value: 0n,
         });
-        return await client.waitForTransactionReceipt({
+        this.emit("submitted", hash);
+        const receipt = await client.waitForTransactionReceipt({
           hash,
           status: ACCEPTED,
           interval: 6000,
           retries: 150,
         });
+        this.emit("accepted", hash);
+        return receipt;
       } catch (e) {
         lastErr = e;
         const msg = String((e as Error)?.message ?? e);
         if (!/revert|timed out|temporarily|429/i.test(msg)) throw e;
+        this.emit("retrying", "The network was busy. Retrying shortly.");
         await new Promise((r) => setTimeout(r, 8000));
       }
     }

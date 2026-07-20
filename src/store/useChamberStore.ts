@@ -64,6 +64,9 @@ interface ChamberState {
   busy: boolean;
   error: string | null;
   notice: string | null;
+  // Live progress of a slow on-chain write, shown so the user is never staring
+  // at a silent spinner. { label, txHash? } or null when idle.
+  progress: { label: string; txHash: string | null } | null;
 
   // draft seal in progress (Sealing Table + Binding Altar)
   draft: SealDraft;
@@ -87,6 +90,43 @@ interface ChamberState {
 
 const adapter = getAdapter();
 
+const EXPLORER_TX = "https://explorer-bradbury.genlayer.com/tx/";
+
+// Bridge the adapter's write phases into a UI-friendly progress object. Set
+// once here; each write action clears it in its finally block.
+function wireProgress(
+  set: (partial: Partial<ChamberState>) => void,
+): void {
+  if ((adapter as any).onPhase !== undefined) {
+    (adapter as any).onPhase = (phase: string, detail?: string) => {
+      switch (phase) {
+        case "submitting":
+          set({ progress: { label: "Sign the transaction in MetaMask...", txHash: null } });
+          break;
+        case "resubmitting":
+          set({ progress: { label: "Re-sign the transaction in MetaMask...", txHash: null } });
+          break;
+        case "submitted":
+          set({
+            progress: {
+              label: "Sent. Validators are reaching consensus (this can take a few minutes)...",
+              txHash: detail ?? null,
+            },
+          });
+          break;
+        case "retrying":
+          set({ progress: { label: "Network was busy. Retrying...", txHash: null } });
+          break;
+        case "accepted":
+          set({ progress: { label: "Accepted on-chain. Settling state...", txHash: detail ?? null } });
+          break;
+        default:
+          break;
+      }
+    };
+  }
+}
+
 // Writing requires a taken-up signet. In contract mode that means a real
 // connected browser wallet; in mock mode the fixed mock identity is enough.
 // Returns true when a write may proceed.
@@ -104,7 +144,10 @@ function ensureSignet(
   return true;
 }
 
-export const useChamberStore = create<ChamberState>((set, get) => ({
+export const useChamberStore = create<ChamberState>((set, get) => {
+  // Route adapter write phases into the progress banner (once).
+  wireProgress(set);
+  return {
   station: "antechamber",
   setStation: (s) => set({ station: s }),
 
@@ -127,7 +170,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
       } catch (e) {
         set({ error: (e as Error).message });
       } finally {
-        set({ busy: false });
+        set({ busy: false, progress: null });
       }
       return;
     }
@@ -153,6 +196,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
   busy: false,
   error: null,
   notice: null,
+  progress: null,
 
   draft: { ...EMPTY_DRAFT },
   draftVaultId: null,
@@ -210,7 +254,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
-      set({ busy: false });
+      set({ busy: false, progress: null });
     }
   },
 
@@ -238,7 +282,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
-      set({ busy: false });
+      set({ busy: false, progress: null });
     }
   },
 
@@ -254,7 +298,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
-      set({ busy: false });
+      set({ busy: false, progress: null });
     }
   },
 
@@ -286,7 +330,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
       await get().refresh();
       set({ notice: "A candle flare passed down the hall. The vaults were re-read." });
     } finally {
-      set({ busy: false });
+      set({ busy: false, progress: null });
     }
   },
 
@@ -313,7 +357,7 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
-      set({ busy: false });
+      set({ busy: false, progress: null });
     }
   },
 
@@ -327,10 +371,11 @@ export const useChamberStore = create<ChamberState>((set, get) => ({
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
-      set({ busy: false });
+      set({ busy: false, progress: null });
     }
   },
 
   clearMelt: () => set({ meltVaultId: null, meltResult: null, revealedPayload: null }),
   clearMessages: () => set({ error: null, notice: null }),
-}));
+  };
+});
