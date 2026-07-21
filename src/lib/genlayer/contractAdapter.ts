@@ -278,6 +278,14 @@ export class ContractAdapter implements DeadhandAdapter {
   // -- writes ----------------------------------------------------------
 
   async seal(input: SealInput): Promise<Vault> {
+    // Snapshot existing ids before submitting so receipt fallbacks can identify
+    // this exact seal instead of returning an older vault owned by the signer.
+    const before = await this.getVaults().catch(() => [] as Vault[]);
+    const knownIds = new Set(before.map((vault) => vault.id));
+    const expectedOwner = (this.ownerAddress ?? "").toLowerCase();
+    const expectedTitle = input.title.trim() || "Untitled seal";
+    const expectedRecipient = input.recipient.trim();
+
     const receipt = await this.writeReceipt("seal", [
       input.title,
       input.payloadCommitment,
@@ -286,22 +294,45 @@ export class ContractAdapter implements DeadhandAdapter {
       input.conditionVisibility,
       Date.now(),
     ]);
-    const vaultId = this.extractReturn<string>(receipt);
-    const vault = vaultId ? await this.getVault(vaultId) : null;
-    if (vault) return vault;
-    const vaults = await this.getVaults();
-    const mine = vaults.find((v) => v.owner === this.ownerAddress);
-    if (!mine) throw new Error("The seal was pressed but could not be read back.");
-    return mine;
+    const returned = this.extractReturn<unknown>(receipt);
+    const returnedId =
+      typeof returned === "string" && /^vault_\d+$/.test(returned) ? returned : null;
+
+    // Bradbury receipts do not always expose the contract return in one stable
+    // field. Reconcile against state and wait briefly for the accepted write to
+    // become readable. Never submit the seal a second time.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (returnedId) {
+        const direct = await this.getVault(returnedId).catch(() => null);
+        if (direct) return direct;
+      }
+      const vaults = await this.getVaults().catch(() => [] as Vault[]);
+      const created = vaults.find(
+        (vault) =>
+          !knownIds.has(vault.id) &&
+          vault.owner.toLowerCase() === expectedOwner &&
+          vault.title === expectedTitle &&
+          vault.recipient === expectedRecipient &&
+          !vault.conditionBound,
+      );
+      if (created) return created;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    throw new Error(
+      "The seal was accepted but its new vault is not readable yet. Check the hall before creating another seal.",
+    );
   }
 
   async bindCondition(vaultId: string, conditionText: string): Promise<Vault> {
     // Conditions are public because validators must independently judge them.
     // Payload confidentiality is handled separately by AES-GCM encryption.
     await this.writeReceipt("bind_condition", [vaultId, conditionText, Date.now()]);
-    const vault = await this.getVault(vaultId);
-    if (!vault) throw new Error("The condition was bound but could not be read back.");
-    return vault;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const vault = await this.getVault(vaultId).catch(() => null);
+      if (vault?.conditionBound) return vault;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    throw new Error("The condition was accepted but its updated vault is not readable yet.");
   }
 
   async checkWorld(input: CheckWorldInput): Promise<CheckResult> {

@@ -275,12 +275,20 @@ export const useChamberStore = create<ChamberState>((set, get) => {
       });
       rememberKey(vault.id, keyRef);
       rememberActiveVault(vault.id);
-      await get().refresh();
+
+      // Navigate as soon as the accepted vault has been reconciled. A slower
+      // secondary refresh must never leave the user stuck at the sealing table.
       set({
+        vaults: [vault, ...get().vaults.filter((item) => item.id !== vault.id)],
+        evidenceByVault: { ...get().evidenceByVault, [vault.id]: [] },
         draftVaultId: vault.id,
         activeVaultId: vault.id,
         station: "altar",
         notice: "The wax is poured. Now bind the condition.",
+      });
+      void get().refresh().catch(() => {
+        // The accepted vault is already in local state; a later page refresh
+        // will reconcile the rest of the hall if this background read fails.
       });
     } catch (e) {
       set({ error: (e as Error).message });
@@ -332,13 +340,16 @@ export const useChamberStore = create<ChamberState>((set, get) => {
     }
     set({ busy: true, error: null });
     try {
-      await adapter.bindCondition(vaultId, conditionText.trim());
-      await get().refresh();
+      const boundVault = await adapter.bindCondition(vaultId, conditionText.trim());
       get().resetDraft();
       set({
+        vaults: get().vaults.map((item) => (item.id === vaultId ? boundVault : item)),
         activeVaultId: vaultId,
         station: "hall",
         notice: "The condition is bound. The vault takes its place in the hall.",
+      });
+      void get().refresh().catch(() => {
+        // The bound vault is already reflected locally; retry on next refresh.
       });
     } catch (e) {
       set({ error: (e as Error).message });
