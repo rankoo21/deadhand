@@ -20,9 +20,9 @@ export function BindingAltar() {
   const draft = useChamberStore((s) => s.draft);
   const vaults = useChamberStore((s) => s.vaults);
   const draftVaultId = useChamberStore((s) => s.draftVaultId);
-  const activeVaultId = useChamberStore((s) => s.activeVaultId);
+  const setStation = useChamberStore((s) => s.setStation);
 
-  const boundVault = vaults.find((v) => v.id === (draftVaultId ?? activeVaultId));
+  const boundVault = vaults.find((v) => v.id === draftVaultId);
   const sigil = boundVault?.sigil ?? draft.sigil;
 
   const placeholder =
@@ -37,6 +37,33 @@ export function BindingAltar() {
           Write what the world can confirm. Once bound, it cannot change.
         </p>
       </header>
+
+      {!boundVault ? (
+        <div className="stone-surface mx-auto max-w-xl rounded-sm p-7 text-center" role="alert">
+          <p className="font-display text-base text-[#E8E0CF]">
+            No unbound vault is selected.
+          </p>
+          <p className="mt-2 font-display text-sm italic text-[rgba(232,224,207,0.58)]">
+            Return to the hall, select your sealed vault, then choose Bind condition.
+          </p>
+          <button
+            type="button"
+            onClick={() => setStation("hall")}
+            className="focus-ring mt-6 min-h-11 rounded-sm border border-[rgba(242,193,78,0.5)] px-6 py-3 font-display text-xs uppercase tracking-[0.25em] text-[#F2C14E] transition-colors hover:border-[rgba(242,193,78,0.9)]"
+          >
+            Choose a vault in the hall
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="mx-auto mb-6 max-w-xl rounded-sm border border-[rgba(242,193,78,0.28)] bg-[rgba(34,26,18,0.35)] px-5 py-4">
+            <p className="font-display text-[0.68rem] uppercase tracking-[0.25em] text-[#9C6B3C]">
+              Selected vault
+            </p>
+            <p className="mt-1 font-display text-base text-[#E8E0CF]">
+              {boundVault.title} <span className="text-[rgba(242,193,78,0.75)]">· {boundVault.id}</span>
+            </p>
+          </div>
 
       {/* The sealed bundle ringed by slow-turning gauges. */}
       <div className="relative mx-auto mb-10 flex h-56 w-56 items-center justify-center">
@@ -85,11 +112,13 @@ export function BindingAltar() {
           disabled={busy || !condition.trim()}
           aria-label="Bind the condition to the seal"
           whileTap={reduced ? undefined : { scale: 0.95 }}
-          className="focus-ring rounded-sm border border-[rgba(242,193,78,0.5)] bg-[rgba(34,26,18,0.6)] px-10 py-4 font-display text-sm uppercase tracking-[0.3em] text-[#F2C14E] transition-colors hover:border-[rgba(242,193,78,0.9)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="focus-ring min-h-11 rounded-sm border border-[rgba(242,193,78,0.5)] bg-[rgba(34,26,18,0.6)] px-10 py-4 font-display text-sm uppercase tracking-[0.3em] text-[#F2C14E] transition-colors hover:border-[rgba(242,193,78,0.9)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Bind the condition
         </motion.button>
       </div>
+        </>
+      )}
     </section>
   );
 }

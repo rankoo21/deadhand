@@ -37,7 +37,7 @@ function EngravedControl({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`focus-ring rounded-sm border bg-[rgba(10,8,7,0.5)] px-4 py-2 font-display text-[0.7rem] uppercase tracking-[0.24em] transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${color}`}
+      className={`focus-ring min-h-11 rounded-sm border bg-[rgba(10,8,7,0.5)] px-4 py-2 font-display text-[0.7rem] uppercase tracking-[0.24em] transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${color}`}
     >
       {label}
     </button>
@@ -84,6 +84,7 @@ export function VaultHall() {
   const vaults = useChamberStore((s) => s.vaults);
   const activeVaultId = useChamberStore((s) => s.activeVaultId);
   const setActiveVault = useChamberStore((s) => s.setActiveVault);
+  const beginBinding = useChamberStore((s) => s.beginBinding);
   const checkWorld = useChamberStore((s) => s.checkWorld);
   const checkTheHall = useChamberStore((s) => s.checkTheHall);
   const beginMelt = useChamberStore((s) => s.beginMelt);
@@ -203,6 +204,16 @@ export function VaultHall() {
 
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap gap-3">
+                {!active.conditionBound &&
+                  signetAddress &&
+                  active.owner.toLowerCase() === signetAddress.toLowerCase() && (
+                    <EngravedControl
+                      label="Bind condition"
+                      tone="gold"
+                      disabled={busy}
+                      onClick={() => beginBinding(active.id)}
+                    />
+                  )}
                 <EngravedControl
                   label="Check the world"
                   tone="gold"

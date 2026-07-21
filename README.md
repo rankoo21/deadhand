@@ -103,3 +103,9 @@ The UI imports only the adapter interface, so swapping mock for contract touches
 - genlayer-js
 
 Shipped as a static export on Cloudflare Pages.
+
+## Recovery and transaction safety
+
+If a sealed vault loses its draft session after refresh, select it in **The Vault Hall** and choose **Bind condition**. The altar shows the selected vault title and ID before accepting the immutable public condition, and the hall selection is remembered locally.
+
+After a write returns a transaction hash, the frontend only keeps polling that same hash. It never automatically resubmits a timed-out write, preventing non-idempotent `seal` calls from creating duplicate vaults while Bradbury consensus is still pending.

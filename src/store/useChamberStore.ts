@@ -70,13 +70,14 @@ interface ChamberState {
 
   // draft seal in progress (Sealing Table + Binding Altar)
   draft: SealDraft;
-  draftVaultId: string | null; // the freshly sealed, not-yet-bound vault
+  draftVaultId: string | null; // the freshly sealed or explicitly selected unbound vault
   setDraft: (patch: Partial<SealDraft>) => void;
   resetDraft: () => void;
 
   // lifecycle
   refresh: () => Promise<void>;
   pourTheWax: () => Promise<void>;
+  beginBinding: (vaultId: string) => void;
   bindCondition: (conditionText: string) => Promise<void>;
   setActiveVault: (id: string | null) => void;
   checkWorld: (vaultId: string, sourceUri: string, sourceLabel: string) => Promise<void>;
@@ -89,6 +90,26 @@ interface ChamberState {
 }
 
 const adapter = getAdapter();
+const ACTIVE_VAULT_STORAGE_KEY = "deadhand:active-vault";
+
+function readRememberedVault(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(ACTIVE_VAULT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberActiveVault(vaultId: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (vaultId) window.localStorage.setItem(ACTIVE_VAULT_STORAGE_KEY, vaultId);
+    else window.localStorage.removeItem(ACTIVE_VAULT_STORAGE_KEY);
+  } catch {
+    // Selection persistence is a convenience; storage failure must not block the app.
+  }
+}
 
 const EXPLORER_TX = "https://explorer-bradbury.genlayer.com/tx/";
 
@@ -114,8 +135,13 @@ function wireProgress(
             },
           });
           break;
-        case "retrying":
-          set({ progress: { label: "Network was busy. Retrying...", txHash: null } });
+        case "polling":
+          set({
+            progress: {
+              label: "Still pending. Watching the same transaction — no duplicate was sent...",
+              txHash: detail ?? null,
+            },
+          });
           break;
         case "accepted":
           set({ progress: { label: "Accepted on-chain. Settling state...", txHash: detail ?? null } });
@@ -214,7 +240,11 @@ export const useChamberStore = create<ChamberState>((set, get) => {
         evidenceByVault[v.id] = await adapter.getEvidence(v.id);
       }),
     );
-    set({ vaults, ledger, evidenceByVault });
+    const remembered = get().activeVaultId ?? readRememberedVault();
+    const activeVaultId =
+      remembered && vaults.some((vault) => vault.id === remembered) ? remembered : null;
+    rememberActiveVault(activeVaultId);
+    set({ vaults, ledger, evidenceByVault, activeVaultId });
   },
 
   pourTheWax: async () => {
@@ -244,6 +274,7 @@ export const useChamberStore = create<ChamberState>((set, get) => {
         conditionVisibility: draft.conditionVisibility,
       });
       rememberKey(vault.id, keyRef);
+      rememberActiveVault(vault.id);
       await get().refresh();
       set({
         draftVaultId: vault.id,
@@ -258,11 +289,41 @@ export const useChamberStore = create<ChamberState>((set, get) => {
     }
   },
 
+  beginBinding: (vaultId) => {
+    const { vaults, signetAddress } = get();
+    const vault = vaults.find((item) => item.id === vaultId);
+    if (!vault) {
+      set({ error: "That vault could not be found. Refresh the hall and try again." });
+      return;
+    }
+    if (vault.conditionBound) {
+      set({ error: "This vault already has a bound condition." });
+      return;
+    }
+    if (signetAddress && vault.owner.toLowerCase() !== signetAddress.toLowerCase()) {
+      set({ error: "Only the hand that pressed this seal can bind its condition." });
+      return;
+    }
+    rememberActiveVault(vaultId);
+    set({
+      draftVaultId: vaultId,
+      activeVaultId: vaultId,
+      station: "altar",
+      error: null,
+      notice: `Selected ${vault.id}. Write the public condition that validators will judge.`,
+    });
+  },
+
   bindCondition: async (conditionText) => {
     if (!ensureSignet(get, set)) return;
-    const vaultId = get().draftVaultId ?? get().activeVaultId;
+    const vaultId = get().draftVaultId;
     if (!vaultId) {
-      set({ error: "Press a seal before binding a condition." });
+      set({ error: "Choose an unbound vault in the hall before binding a condition." });
+      return;
+    }
+    const vault = get().vaults.find((item) => item.id === vaultId);
+    if (!vault || vault.conditionBound) {
+      set({ error: "This vault is unavailable or its condition is already bound." });
       return;
     }
     if (!conditionText.trim()) {
@@ -286,7 +347,10 @@ export const useChamberStore = create<ChamberState>((set, get) => {
     }
   },
 
-  setActiveVault: (id) => set({ activeVaultId: id }),
+  setActiveVault: (id) => {
+    rememberActiveVault(id);
+    set({ activeVaultId: id });
+  },
 
   checkWorld: async (vaultId, sourceUri, sourceLabel) => {
     if (!ensureSignet(get, set)) return;

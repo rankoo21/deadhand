@@ -222,22 +222,21 @@ export class ContractAdapter implements DeadhandAdapter {
 
   private async writeReceipt(functionName: string, args: unknown[]): Promise<any> {
     const client = this.getWriteClient();
-    // Bradbury occasionally reverts a tx transiently at the consensus layer.
-    // Retry a couple of times before giving up.
+    this.emit("submitting", "Waiting for you to sign in MetaMask.");
+    const hash = await client.writeContract({
+      address: this.address,
+      functionName,
+      args: args as any,
+      value: 0n,
+    });
+    this.emit("submitted", hash);
+
+    // Once a hash exists, never submit the write again. Consensus can outlive a
+    // client polling window; resubmitting a non-idempotent seal would create a
+    // second vault if both transactions are eventually accepted.
     let lastErr: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let pollingWindow = 0; pollingWindow < 3; pollingWindow++) {
       try {
-        this.emit(
-          attempt === 0 ? "submitting" : "resubmitting",
-          "Waiting for you to sign in MetaMask.",
-        );
-        const hash = await client.writeContract({
-          address: this.address,
-          functionName,
-          args: args as any,
-          value: 0n,
-        });
-        this.emit("submitted", hash);
         const receipt = await client.waitForTransactionReceipt({
           hash,
           status: ACCEPTED,
@@ -249,12 +248,16 @@ export class ContractAdapter implements DeadhandAdapter {
       } catch (e) {
         lastErr = e;
         const msg = String((e as Error)?.message ?? e);
-        if (!/revert|timed out|temporarily|429/i.test(msg)) throw e;
-        this.emit("retrying", "The network was busy. Retrying shortly.");
-        await new Promise((r) => setTimeout(r, 8000));
+        if (!/timed out|temporarily|timeout|429/i.test(msg)) throw e;
+        if (pollingWindow < 2) {
+          this.emit("polling", hash);
+          await new Promise((resolve) => setTimeout(resolve, 8000));
+        }
       }
     }
-    throw lastErr;
+    throw new Error(
+      `Transaction ${hash} is still pending. It was not resubmitted. Check the explorer before trying this action again. ${String((lastErr as Error)?.message ?? "")}`.trim(),
+    );
   }
 
   private extractReturn<T>(receipt: any): T | undefined {
