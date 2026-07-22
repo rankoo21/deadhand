@@ -123,19 +123,23 @@ def test_validator_rejects_verdict_mismatch(deploy, direct_vm):
     assert direct_vm.run_validator(leader_result=leader) is False
 
 
-def test_validator_rejects_confidence_mismatch(deploy, direct_vm):
+def test_validator_accepts_same_verdict_with_differing_confidence(deploy, direct_vm):
+    # Consensus compares only the load-bearing verdict, so honest confidence
+    # variation still agrees instead of forcing UNDETERMINED.
     mine = canonical()
     capture_validator(deploy, direct_vm, mine)
     leader = canonical(confidence="high")
-    assert direct_vm.run_validator(leader_result=leader) is False
+    assert direct_vm.run_validator(leader_result=leader) is True
 
 
-def test_validator_rejects_any_category_mismatch(deploy, direct_vm):
+def test_validator_accepts_same_verdict_with_differing_category_status(deploy, direct_vm):
+    # Per-dimension statuses vary between independent LLM runs; a matching
+    # verdict must still agree.
     mine = canonical()
     capture_validator(deploy, direct_vm, mine)
     for category in ("happy_path", "errors", "permissions", "edge_cases"):
         leader = canonical(override={category: "covered" if mine["checks"][category]["status"] != "covered" else "missing"})
-        assert direct_vm.run_validator(leader_result=leader) is False
+        assert direct_vm.run_validator(leader_result=leader) is True
 
 
 def test_validator_rejects_malformed_independent_analysis(deploy, direct_vm):

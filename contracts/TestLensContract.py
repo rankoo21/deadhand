@@ -155,16 +155,12 @@ def _assess(payload: dict) -> dict:
 
 
 def _same_decision(left: dict, right: dict) -> bool:
-    if left.get("verdict") != right.get("verdict") or left.get("confidence") != right.get("confidence"):
-        return False
-    left_checks = left.get("checks", {})
-    right_checks = right.get("checks", {})
-    if not isinstance(left_checks, dict) or not isinstance(right_checks, dict):
-        return False
-    for name in DIMENSIONS:
-        if left_checks.get(name, {}).get("status") != right_checks.get(name, {}).get("status"):
-            return False
-    return True
+    # Consensus compares only the load-bearing verdict. Confidence and
+    # per-dimension statuses are secondary signals that vary between independent
+    # LLM runs; requiring exact agreement on all of them makes honest validators
+    # disagree and drives transactions to UNDETERMINED. The verdict is the stable
+    # decision both leader and validator must agree on.
+    return left.get("verdict") == right.get("verdict")
 
 
 def _consensus(payload: dict) -> dict:
