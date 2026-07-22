@@ -1,259 +1,81 @@
-// Full live end-to-end test of the deployed Deadhand contract on Testnet Bradbury.
-//
-//   node scripts/fulltest.mjs
-//
-// Exercises the real lifecycle with on-chain WRITES:
-//   seal -> bind_condition -> check_world (AI consensus) -> (open_seal) -> reads
-//
-// Method names/params are discovered from client.getContractSchema(address);
-// nothing is guessed. Every transaction is printed as a full public explorer
-// link as it happens, and an EXPLORER LINKS block is printed at the end.
-
+// Full live TestLens check. WARNING: this script performs exactly one
+// submit_check contract write when explicitly run. It is not run by CI or local validation.
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
 import { createClient, createAccount } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { studionet, testnetBradbury, localnet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, "..");
-const EXPLORER_BASE = "https://explorer-bradbury.genlayer.com";
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function parseEnv(path) {
-  const out = {};
-  if (!existsSync(path)) return out;
+  const values = {};
+  if (!existsSync(path)) return values;
   for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
-    if (eq === -1) continue;
-    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+    const value = line.trim();
+    if (!value || value.startsWith("#")) continue;
+    const separator = value.indexOf("=");
+    if (separator > 0) values[value.slice(0, separator).trim()] = value.slice(separator + 1).trim();
   }
-  return out;
+  return values;
 }
 
-// Reads-safe getter: handles both Map and plain object return shapes.
-const g = (o, k) => (o && typeof o.get === "function" ? o.get(k) : o?.[k]);
+function pickChain(name) {
+  switch ((name ?? "studionet").toLowerCase()) {
+    case "bradbury": case "testnet-bradbury": case "testnetbradbury": return testnetBradbury;
+    case "localnet": return localnet;
+    default: return studionet;
+  }
+}
 
-// Convert BigInt/Map/nested structures into JSON-serializable plain values.
-function plainify(value) {
+function plain(value) {
   if (typeof value === "bigint") return Number(value);
-  if (value instanceof Map) {
-    const obj = {};
-    for (const [k, v] of value.entries()) obj[k] = plainify(v);
-    return obj;
-  }
-  if (Array.isArray(value)) return value.map(plainify);
-  if (value && typeof value === "object") {
-    const obj = {};
-    for (const [k, v] of Object.entries(value)) obj[k] = plainify(v);
-    return obj;
-  }
+  if (value instanceof Map) return Object.fromEntries([...value].map(([key, item]) => [key, plain(item)]));
+  if (Array.isArray(value)) return value.map(plain);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plain(item)]));
   return value;
 }
 
-const j = (v) => JSON.stringify(plainify(v), null, 2);
-const txLink = (hash) => `${EXPLORER_BASE}/tx/${hash}`;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 async function main() {
   const env = parseEnv(join(root, ".env.deploy"));
-  const pk = env.GENLAYER_PRIVATE_KEY;
-  const address = env.DEADHAND_CONTRACT_ADDRESS;
-  if (!pk) throw new Error("Missing GENLAYER_PRIVATE_KEY in .env.deploy");
-  if (!address) throw new Error("Missing DEADHAND_CONTRACT_ADDRESS in .env.deploy");
+  const privateKey = env.GENLAYER_PRIVATE_KEY;
+  const address = env.TESTLENS_CONTRACT_ADDRESS;
+  const network = env.GENLAYER_NETWORK || "studionet";
+  if (!privateKey) throw new Error("Missing GENLAYER_PRIVATE_KEY in .env.deploy.");
+  if (!address) throw new Error("Missing TESTLENS_CONTRACT_ADDRESS in .env.deploy.");
 
-  const account = createAccount(pk.startsWith("0x") ? pk : `0x${pk}`);
-  const client = createClient({ chain: testnetBradbury, account });
+  const account = createAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+  const client = createClient({ chain: pickChain(network), account });
+  const requestId = `full-${Date.now().toString(36)}`;
+  const payload = JSON.stringify({
+    feature_requirement: "A project member can archive an active project, but a guest cannot and an archived project cannot be archived twice.",
+    tests_summary: "test_member_archives_active_project\ntest_guest_cannot_archive\ntest_archive_rejects_already_archived_project\ntest_archive_returns_not_found",
+    risk_context: "Archiving changes visibility and must preserve authorization boundaries.",
+  });
 
-  // Collected tx links for the final EXPLORER LINKS block.
-  const links = [];
-
-  console.log("=== Deadhand full live end-to-end test (Testnet Bradbury) ===");
-  console.log(`Contract: ${address}`);
-  console.log(`Signer:   ${account.address}  (owner + recipient for this demo)`);
-  console.log(`Explorer: ${EXPLORER_BASE}/address/${address}`);
-  console.log("");
-
-  // --- 1. Discover the real ABI: do not guess method names/params ----------
-  console.log("--- Step 1: discovering contract schema ---");
-  const schema = await client.getContractSchema(address);
-  const methods = g(schema, "methods") ?? schema?.methods ?? {};
-  const methodEntries =
-    methods instanceof Map ? [...methods.entries()] : Object.entries(methods ?? {});
-  const wanted = [
-    "seal",
-    "bind_condition",
-    "check_world",
-    "open_seal",
-    "get_vault",
-    "get_vaults",
-    "get_summary",
-  ];
-  for (const [name, def] of methodEntries) {
-    if (!wanted.includes(name)) continue;
-    const params = g(def, "params") ?? def?.params ?? [];
-    const kind = (g(def, "readonly") ?? def?.readonly) ? "view" : "write";
-    console.log(`  ${name} (${kind})  params=${JSON.stringify(plainify(params))}`);
+  console.log("TestLens live end-to-end check");
+  console.log("WARNING: exactly one contract write will be submitted.");
+  console.log("Baseline summary:", JSON.stringify(plain(await client.readContract({ address, functionName: "get_summary", args: [] }))));
+  const hash = await client.writeContract({ address, functionName: "submit_check", args: [requestId, payload, Date.now()], value: 0n });
+  console.log(`Transaction hash: ${hash}`);
+  const receipt = plain(await client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED, interval: 6000, retries: 150 }));
+  if (receipt?.txExecutionResultName !== "FINISHED_WITH_RETURN") {
+    throw new Error(`Contract execution failed: ${String(receipt?.txExecutionResultName ?? "unknown")}.`);
   }
-  console.log("");
 
-  // --- write helper with retry + receipt wait ------------------------------
-  const wait = (hash) =>
-    client.waitForTransactionReceipt({
-      hash,
-      status: TransactionStatus.ACCEPTED,
-      interval: 6000,
-      retries: 150,
-    });
-
-  const read = (fn, args = []) => client.readContract({ address, functionName: fn, args });
-
-  // Executes a write with up to 4 retries on transient Bradbury failures.
-  // Returns { hash, receipt }. Prints the explorer link as soon as the tx is sent.
-  const write = async (label, fn, args) => {
-    let lastErr;
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
-      try {
-        const hash = await client.writeContract({ address, functionName: fn, args, value: 0n });
-        const link = txLink(hash);
-        console.log(`  [${label}] tx sent: ${link}`);
-        links.push({ label, link });
-        const receipt = await wait(hash);
-        console.log(`  [${label}] ACCEPTED`);
-        return { hash, receipt };
-      } catch (e) {
-        lastErr = e;
-        const msg = String(e?.message ?? e);
-        if (!/revert|timed out|temporarily|429|nonce/i.test(msg)) {
-          throw e;
-        }
-        console.log(`  [${label}] transient failure (attempt ${attempt}/4): ${msg}`);
-        if (attempt < 4) await sleep(10000);
-      }
-    }
-    throw new Error(`Step "${label}" failed after 4 retries: ${String(lastErr?.message ?? lastErr)}`);
-  };
-
-  const readUntil = async (fn, args, pred, tries = 40, gap = 4000) => {
-    let last;
-    for (let i = 0; i < tries; i += 1) {
-      last = await read(fn, args);
-      if (pred(last)) return last;
-      await sleep(gap);
-    }
-    return last;
-  };
-
-  // --- 2. Baseline summary -------------------------------------------------
-  console.log("--- Step 2: baseline summary ---");
-  const summary0 = await read("get_summary", []);
-  console.log("  get_summary =>", j(summary0));
-  const nextIndex = Number(g(summary0, "vaults"));
-  const vaultId = `vault_${nextIndex}`;
-  console.log(`  next vault id will be: ${vaultId}`);
-  console.log("");
-
-  // --- 3. seal -------------------------------------------------------------
-  // seal(title, payload_commitment, recipient, sigil, condition_visibility, now_ms)
-  console.log("--- Step 3: seal a vault ---");
-  await write("seal", "seal", [
-    "First footsteps on the Moon",
-    JSON.stringify({
-      v: 1,
-      alg: "AES-GCM-256",
-      iv: "AAAAAAAAAAAAAAAA",
-      ct: "ZGVhZGhhbmQtZnVsbHRlc3QtY2lwaGVydGV4dA==",
-      hash: "fulltest0123456789abcdef",
-    }),
-    account.address, // recipient == signer so open_seal is possible in this demo
-    "hollowStar",
-    "public",
-    Date.now(),
-  ]);
-  let vault = await readUntil("get_vault", [vaultId], (v) => !!g(v, "id"));
-  console.log(`  vault state after seal: ${g(vault, "state")}`);
-  console.log("");
-
-  // --- 4. bind_condition ---------------------------------------------------
-  // bind_condition(vault_id, condition_text, now_ms)
-  console.log("--- Step 4: bind a natural-language condition ---");
-  const conditionText =
-    "Apollo 11 landed humans on the Moon and returned them safely to Earth.";
-  await write("bind_condition", "bind_condition", [vaultId, conditionText, Date.now()]);
-  vault = await readUntil("get_vault", [vaultId], (v) => g(v, "conditionBound") === true);
-  console.log(`  conditionBound: ${g(vault, "conditionBound")}`);
-  console.log(`  conditionText:  ${g(vault, "conditionText")}`);
-  console.log("");
-
-  // --- 5. check_world (AI consensus, slow on Bradbury) ---------------------
-  // check_world(vault_id, source_uri, source_label, now_ms)
-  console.log("--- Step 5: check_world (validators fetch public evidence) ---");
-  const sourceUri = "https://en.wikipedia.org/wiki/Apollo_11";
-  const { receipt: checkReceipt } = await write("check_world", "check_world", [
-    vaultId,
-    sourceUri,
-    "Apollo 11 public historical record",
-    Date.now(),
-  ]);
-  // Try to surface the decision returned by the tx if present in the receipt.
-  console.log("");
-
-  vault = await readUntil(
-    "get_vault",
-    [vaultId],
-    (v) => g(v, "state") !== "sealed",
-    40,
-    4000,
-  );
-  const stateAfterCheck = g(vault, "state");
-  console.log(`  vault state after check_world: ${stateAfterCheck}`);
-  console.log(`  closeness: ${g(vault, "closeness")}  band: ${g(vault, "closenessBand")}`);
-  console.log("");
-
-  // --- 6. open_seal (only if releasable) -----------------------------------
-  console.log("--- Step 6: open_seal (recipient), only if releasable ---");
-  if (stateAfterCheck === "releasable") {
-    // open_seal(vault_id, mock_tx_hash, now_ms)
-    const { receipt: openReceipt } = await write("open_seal", "open_seal", [
-      vaultId,
-      "",
-      Date.now(),
-    ]);
-    vault = await readUntil("get_vault", [vaultId], (v) => g(v, "opened") === true);
-    console.log(`  opened: ${g(vault, "opened")}  state: ${g(vault, "state")}`);
-    console.log(`  revealed payloadCommitment: ${g(vault, "payloadCommitment")}`);
-  } else {
-    console.log(`  Skipped: vault is "${stateAfterCheck}", not "releasable".`);
+  let result = null;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    result = plain(await client.readContract({ address, functionName: "get_result", args: [requestId, account.address] }));
+    if (result?.request_id === requestId) break;
+    await sleep(2000);
   }
-  console.log("");
+  if (result?.request_id !== requestId) throw new Error("Canonical result was not readable before timeout.");
 
-  // --- 7. Final reads ------------------------------------------------------
-  console.log("--- Step 7: final reads ---");
-  const finalVault = await read("get_vault", [vaultId]);
-  const finalVaults = await read("get_vaults", [0, 5]);
-  const finalSummary = await read("get_summary", []);
-  console.log("get_vault =>");
-  console.log(j(finalVault));
-  console.log("get_vaults (first 5) =>");
-  console.log(j(finalVaults));
-  console.log("get_summary =>");
-  console.log(j(finalSummary));
-  console.log("");
-
-  // --- 8. EXPLORER LINKS block ---------------------------------------------
-  console.log("========================= EXPLORER LINKS =========================");
-  console.log(`Contract: ${EXPLORER_BASE}/address/${address}`);
-  for (const { label, link } of links) {
-    console.log(`${label}: ${link}`);
-  }
-  console.log("==================================================================");
+  console.log("Canonical result:", JSON.stringify(result, null, 2));
+  console.log("Recent results:", JSON.stringify(plain(await client.readContract({ address, functionName: "get_results", args: [0, 5] })), null, 2));
+  console.log("Final summary:", JSON.stringify(plain(await client.readContract({ address, functionName: "get_summary", args: [] }))));
 }
 
-main().catch((err) => {
-  console.error("");
-  console.error("FULLTEST FAILED:", err?.message ?? err);
-  process.exit(1);
-});
+main().catch((error) => { console.error("TestLens full check failed:", error?.message ?? error); process.exit(1); });

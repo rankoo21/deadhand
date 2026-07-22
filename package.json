@@ -1,19 +1,17 @@
 {
-  "name": "deadhand",
+  "name": "testlens",
   "version": "0.1.0",
   "private": true,
-  "description": "Some words should wait for the world.",
+  "description": "GenLayer test coverage review for feature requirements and supplied tests.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
-    "contract:lint": "genvm-lint check contracts/DeadhandContract.py --json",
+    "contract:lint": "genvm-lint check contracts/TestLensContract.py --json",
     "test:direct": "python -m pytest tests/direct/ -p gltest_direct -q",
-    "deploy": "node scripts/deploy.mjs",
-    "livecheck": "node scripts/livecheck.mjs",
-    "fulltest": "node scripts/fulltest.mjs"
+    "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.3.0",

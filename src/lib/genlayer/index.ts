@@ -1,23 +1,17 @@
-import type { DeadhandAdapter } from "./types";
-import { MockAdapter } from "./mockAdapter";
 import { ContractAdapter } from "./contractAdapter";
+import { MockAdapter } from "./mockAdapter";
 
-// Single place that decides which adapter is live. The UI imports getAdapter()
-// and never imports a concrete adapter directly.
-let cached: DeadhandAdapter | null = null;
+export type TestLensAdapter = ContractAdapter | MockAdapter;
+let cached: TestLensAdapter | null = null;
 
-export function getAdapter(): DeadhandAdapter {
+export function getAdapter(): TestLensAdapter {
   if (cached) return cached;
-
-  const mode = process.env.NEXT_PUBLIC_DEADHAND_MODE ?? "mock";
-  const contractAddress = process.env.NEXT_PUBLIC_DEADHAND_CONTRACT ?? "";
-  const network = process.env.NEXT_PUBLIC_DEADHAND_NETWORK ?? "studionet";
-
-  if (mode === "contract" && contractAddress) {
-    cached = new ContractAdapter({ contractAddress, network });
-  } else {
-    cached = new MockAdapter();
-  }
+  const mode = process.env.NEXT_PUBLIC_TESTLENS_MODE ?? "preview";
+  const contractAddress = process.env.NEXT_PUBLIC_TESTLENS_CONTRACT ?? "";
+  const network = process.env.NEXT_PUBLIC_TESTLENS_NETWORK ?? "studionet";
+  cached = mode === "contract" && contractAddress
+    ? new ContractAdapter({ contractAddress, network })
+    : new MockAdapter();
   return cached;
 }
 

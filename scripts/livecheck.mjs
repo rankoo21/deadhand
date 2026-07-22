@@ -1,148 +1,82 @@
-// Live check against the deployed Deadhand contract. Exercises the sealing
-// lifecycle: read the summary, seal a vault, bind a condition, and read it back.
-//
-//   node scripts/livecheck.mjs
-
+// Live TestLens smoke check. WARNING: this script performs exactly one
+// submit_check contract write when explicitly run. It is not part of local validation.
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
-import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
+import { createClient, createAccount } from "genlayer-js";
 import { studionet, testnetBradbury, localnet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, "..");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function parseEnv(path) {
-  const out = {};
-  if (!existsSync(path)) return out;
+  const values = {};
+  if (!existsSync(path)) return values;
   for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    const eq = t.indexOf("=");
-    if (eq === -1) continue;
-    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+    const value = line.trim();
+    if (!value || value.startsWith("#")) continue;
+    const separator = value.indexOf("=");
+    if (separator > 0) values[value.slice(0, separator).trim()] = value.slice(separator + 1).trim();
   }
-  return out;
+  return values;
 }
 
 function pickChain(name) {
   switch ((name ?? "studionet").toLowerCase()) {
-    case "bradbury":
-    case "testnet-bradbury":
-      return testnetBradbury;
-    case "localnet":
-      return localnet;
-    default:
-      return studionet;
+    case "bradbury": case "testnet-bradbury": case "testnetbradbury": return testnetBradbury;
+    case "localnet": return localnet;
+    default: return studionet;
   }
 }
 
-const g = (o, k) => (o && typeof o.get === "function" ? o.get(k) : o?.[k]);
-
-let passed = 0;
-let failed = 0;
-function check(label, cond, extra = "") {
-  if (cond) {
-    passed += 1;
-    console.log(`  PASS  ${label}`);
-  } else {
-    failed += 1;
-    console.log(`  FAIL  ${label}  ${extra}`);
-  }
+function plain(value) {
+  if (typeof value === "bigint") return Number(value);
+  if (value instanceof Map) return Object.fromEntries([...value].map(([key, item]) => [key, plain(item)]));
+  if (Array.isArray(value)) return value.map(plain);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plain(item)]));
+  return value;
 }
 
 async function main() {
-  const env = { ...parseEnv(join(root, ".env.deploy")), ...parseEnv(join(root, ".env.local")) };
-  const address = env.DEADHAND_CONTRACT_ADDRESS || env.NEXT_PUBLIC_DEADHAND_CONTRACT;
-  const network = env.GENLAYER_NETWORK || env.NEXT_PUBLIC_DEADHAND_NETWORK || "studionet";
-  if (!address) throw new Error("No contract address in env.");
+  const env = parseEnv(join(root, ".env.deploy"));
+  const privateKey = env.GENLAYER_PRIVATE_KEY;
+  const address = env.TESTLENS_CONTRACT_ADDRESS;
+  const network = env.GENLAYER_NETWORK || "studionet";
+  if (!privateKey) throw new Error("Missing GENLAYER_PRIVATE_KEY in .env.deploy.");
+  if (!address) throw new Error("Missing TESTLENS_CONTRACT_ADDRESS in .env.deploy.");
 
+  const account = createAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
   const chain = pickChain(network);
-  const pk = env.GENLAYER_PRIVATE_KEY;
-  const account = pk
-    ? createAccount(pk.startsWith("0x") ? pk : `0x${pk}`)
-    : createAccount(generatePrivateKey());
   const client = createClient({ chain, account });
+  const requestId = `live-${Date.now().toString(36)}`;
+  const payload = JSON.stringify({
+    feature_requirement: "A signed-in editor can publish a valid draft, while viewers cannot publish.",
+    tests_summary: "test_editor_can_publish_valid_draft\ntest_viewer_cannot_publish",
+    risk_context: "Publishing permissions must be enforced.",
+  });
 
+  console.log("WARNING: submitting exactly one live TestLens write.");
   console.log(`Contract: ${address}`);
-  console.log(`Network:  ${network}`);
-  console.log(`Caller:   ${account.address}\n`);
+  console.log(`Network: ${network}`);
+  console.log(`Request: ${requestId}`);
+  const hash = await client.writeContract({ address, functionName: "submit_check", args: [requestId, payload, Date.now()], value: 0n });
+  console.log(`Transaction: ${hash}`);
+  const receipt = await client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED, interval: 6000, retries: 150 });
+  const receiptData = plain(receipt);
+  if (receiptData?.txExecutionResultName !== "FINISHED_WITH_RETURN") {
+    throw new Error(`Contract execution failed: ${String(receiptData?.txExecutionResultName ?? "unknown")}.`);
+  }
 
-  const wait = (hash) =>
-    client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED, interval: 6000, retries: 150 });
-  const read = (fn, args = []) => client.readContract({ address, functionName: fn, args });
-  const write = async (fn, args) => {
-    let lastErr;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const h = await client.writeContract({ address, functionName: fn, args, value: 0n });
-        return await wait(h);
-      } catch (e) {
-        lastErr = e;
-        const msg = String(e?.message ?? e);
-        if (!/revert|timed out|temporarily|429/i.test(msg)) throw e;
-        await new Promise((r) => setTimeout(r, 8000));
-      }
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const result = plain(await client.readContract({ address, functionName: "get_result", args: [requestId, account.address] }));
+    if (result?.request_id === requestId) {
+      console.log("Canonical result:", JSON.stringify(result, null, 2));
+      return;
     }
-    throw lastErr;
-  };
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const readUntil = async (fn, args, pred, tries = 30, gap = 4000) => {
-    let last;
-    for (let i = 0; i < tries; i += 1) {
-      last = await read(fn, args);
-      if (pred(last)) return last;
-      await sleep(gap);
-    }
-    return last;
-  };
-
-  console.log("Scenario: read summary, seal a vault, bind a condition, read it back");
-
-  const summary0 = await read("get_summary", []);
-  check("live read: summary available", g(summary0, "vaults") !== undefined, JSON.stringify(summary0));
-
-  const nextIndex = Number(g(summary0, "vaults"));
-  const vaultId = `vault_${nextIndex}`;
-
-  await write("seal", [
-    "When the record is broken",
-    // AES-GCM ciphertext envelope; no plaintext is sent to the contract.
-    JSON.stringify({
-      v: 1,
-      alg: "AES-GCM-256",
-      iv: "AAAAAAAAAAAAAAAA",
-      ct: "ZGVhZGhhbmQtbGl2ZWNoZWNrLWNpcGhlcnRleHQ=",
-      hash: "livecheck0123456789abcdef",
-    }),
-    account.address,
-    "hollowStar",
-    "public",
-    Date.now(),
-  ]);
-  let vault = await readUntil("get_vault", [vaultId], (v) => !!g(v, "id"));
-  check("live read: vault sealed", g(vault, "state") === "sealed", `got ${g(vault, "state")}`);
-  check("live read: keeper recorded", String(g(vault, "recipient")).toLowerCase() === account.address.toLowerCase());
-
-  await write("bind_condition", [vaultId, "When the long-standing world record is officially broken.", Date.now()]);
-  vault = await readUntil("get_vault", [vaultId], (v) => g(v, "conditionBound") === true);
-  check("live read: condition bound", g(vault, "conditionBound") === true);
-  check(
-    "live read: condition text stored",
-    String(g(vault, "conditionText")).includes("world record"),
-    String(g(vault, "conditionText")),
-  );
-
-  const summary1 = await read("get_summary", []);
-  console.log("Contract summary:", JSON.stringify(summary1, (k, v) => (typeof v === "bigint" ? Number(v) : v)));
-
-  console.log(`\n=== ${passed} passed, ${failed} failed ===`);
-  if (failed > 0) process.exit(1);
+    await sleep(2000);
+  }
+  throw new Error("Transaction accepted, but canonical result was not readable before timeout.");
 }
 
-main().catch((e) => {
-  console.error("LIVECHECK ERROR:", e?.message ?? e);
-  process.exit(1);
-});
+main().catch((error) => { console.error("TestLens live check failed:", error?.message ?? error); process.exit(1); });

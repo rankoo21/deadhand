@@ -1,125 +1,56 @@
-// Deploy DeadhandContract to a GenLayer network.
-//
-// Reads the deploy key from .env.deploy (gitignored). Never commit that file.
-//
-//   node scripts/deploy.mjs
-//
-// Env (.env.deploy):
-//   GENLAYER_PRIVATE_KEY   required, hex, 0x optional
-//   GENLAYER_NETWORK       bradbury (default here) | studionet | localnet
-//   GENLAYER_RPC_URL       optional override (custom networks only)
-//
-// On success it prints the deployed address and writes it back into .env.deploy
-// as DEADHAND_CONTRACT_ADDRESS, and prints the frontend env lines.
+// Deploy TestLensContract to a configured GenLayer network.
+// This script reads .env.deploy when explicitly run. Never commit that file.
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
 import { createClient, createAccount } from "genlayer-js";
 import { studionet, testnetBradbury, localnet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, "..");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const envPath = join(root, ".env.deploy");
-const contractPath = join(root, "contracts", "DeadhandContract.py");
+const contractPath = join(root, "contracts", "TestLensContract.py");
 
 function parseEnv(path) {
-  const out = {};
-  if (!existsSync(path)) return out;
+  const values = {};
+  if (!existsSync(path)) return values;
   for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+    const value = line.trim();
+    if (!value || value.startsWith("#")) continue;
+    const separator = value.indexOf("=");
+    if (separator > 0) values[value.slice(0, separator).trim()] = value.slice(separator + 1).trim();
   }
-  return out;
+  return values;
 }
 
 function pickChain(name) {
   switch ((name ?? "studionet").toLowerCase()) {
-    case "bradbury":
-    case "testnet-bradbury":
-    case "testnetbradbury":
-      return testnetBradbury;
-    case "localnet":
-      return localnet;
-    default:
-      return studionet;
+    case "bradbury": case "testnet-bradbury": case "testnetbradbury": return testnetBradbury;
+    case "localnet": return localnet;
+    default: return studionet;
   }
-}
-
-function writeBackAddress(path, address) {
-  let text = existsSync(path) ? readFileSync(path, "utf8") : "";
-  if (/^DEADHAND_CONTRACT_ADDRESS=.*$/m.test(text)) {
-    text = text.replace(/^DEADHAND_CONTRACT_ADDRESS=.*$/m, `DEADHAND_CONTRACT_ADDRESS=${address}`);
-  } else {
-    text += (text.endsWith("\n") || text === "" ? "" : "\n") + `DEADHAND_CONTRACT_ADDRESS=${address}\n`;
-  }
-  writeFileSync(path, text);
 }
 
 async function main() {
   const env = parseEnv(envPath);
-  const pk = env.GENLAYER_PRIVATE_KEY;
-  if (!pk) {
-    console.error("Missing GENLAYER_PRIVATE_KEY in .env.deploy. Paste your funded account key there.");
-    process.exit(1);
-  }
-  const networkName = env.GENLAYER_NETWORK || "studionet";
-  const chain = pickChain(networkName);
-  const account = createAccount(pk.startsWith("0x") ? pk : `0x${pk}`);
-
-  console.log(`Network:  ${networkName}`);
+  const privateKey = env.GENLAYER_PRIVATE_KEY;
+  if (!privateKey) throw new Error("Missing GENLAYER_PRIVATE_KEY in .env.deploy.");
+  const network = env.GENLAYER_NETWORK || "studionet";
+  const account = createAccount(privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`);
+  const options = { chain: pickChain(network), account };
+  if (env.GENLAYER_RPC_URL) options.endpoint = env.GENLAYER_RPC_URL;
+  const client = createClient(options);
+  console.log(`Network: ${network}`);
   console.log(`Deployer: ${account.address}`);
-
-  const clientOpts = { chain, account };
-  if (env.GENLAYER_RPC_URL) clientOpts.endpoint = env.GENLAYER_RPC_URL;
-  const client = createClient(clientOpts);
-
-  const code = readFileSync(contractPath);
-  console.log("Deploying DeadhandContract...");
-
-  const txHash = await client.deployContract({ code, args: [] });
-  console.log(`Deploy tx: ${txHash}`);
-  console.log("Waiting for receipt (Bradbury can take a few minutes)...");
-
-  const receipt = await client.waitForTransactionReceipt({
-    hash: txHash,
-    status: TransactionStatus.ACCEPTED,
-    interval: 6000,
-    retries: 150,
-  });
-
-  const address =
-    receipt?.data?.contract_address ??
-    receipt?.contract_address ??
-    receipt?.data?.contractAddress ??
-    receipt?.contractAddress ??
-    receipt?.recipient ??
-    receipt?.to_address;
-
-  if (!address) {
-    console.error("Deploy accepted but no contract address was found in the receipt.");
-    console.error("Inspect with: genlayer receipt " + txHash + " --stdout --stderr");
-    process.exit(2);
-  }
-
-  console.log("");
-  console.log("Deployed DeadhandContract at:");
-  console.log("  " + address);
-  writeBackAddress(envPath, address);
-
-  console.log("");
-  console.log("Add these to your frontend env (.env.local) to go live:");
-  console.log(`  NEXT_PUBLIC_DEADHAND_MODE=contract`);
-  console.log(`  NEXT_PUBLIC_DEADHAND_CONTRACT=${address}`);
-  console.log(`  NEXT_PUBLIC_DEADHAND_NETWORK=${networkName}`);
+  console.log("Deploying TestLensContract...");
+  const hash = await client.deployContract({ code: readFileSync(contractPath), args: [] });
+  console.log(`Deploy transaction: ${hash}`);
+  const receipt = await client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED, interval: 6000, retries: 150 });
+  const address = receipt?.data?.contract_address ?? receipt?.contract_address ?? receipt?.data?.contractAddress ?? receipt?.contractAddress ?? receipt?.recipient ?? receipt?.to_address;
+  if (!address) throw new Error("Deployment was accepted but the receipt has no contract address.");
+  console.log(`TestLensContract address: ${address}`);
+  console.log("Configure the frontend with NEXT_PUBLIC_TESTLENS_MODE, NEXT_PUBLIC_TESTLENS_CONTRACT, and NEXT_PUBLIC_TESTLENS_NETWORK.");
 }
 
-main().catch((err) => {
-  console.error("Deploy failed:", err?.message ?? err);
-  process.exit(1);
-});
+main().catch((error) => { console.error("Deployment failed:", error?.message ?? error); process.exit(1); });

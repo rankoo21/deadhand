@@ -1,9 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Static export so the chamber can be hosted on any static host. The app
-  // talks to the GenLayer contract directly from the browser, so no server
-  // runtime is needed.
+  // Static export keeps TestLens deployable on any static host. The browser
+  // reads and writes through the GenLayer adapter, so no server is required.
   output: "export",
   images: { unoptimized: true },
 };

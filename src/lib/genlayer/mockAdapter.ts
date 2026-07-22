@@ -1,252 +1,79 @@
-import {
-  CheckResult,
-  CheckWorldInput,
-  DeadhandAdapter,
-  Evidence,
-  LedgerEntry,
-  OpenResult,
-  SealInput,
-  Vault,
-} from "./types";
-import { decideCheck, bandOf } from "@/utils/vaultState";
-import { makeId, mockTxHash } from "@/utils/format";
-import { PRELOADED_VAULTS } from "@/data/mockConditions";
-import { EVIDENCE_TEMPLATES } from "@/data/mockEvidence";
+import type { PhaseUpdate, SubmitCheckInput, TestLensResult, TestLensSummary } from "./types";
 
-const MOCK_OWNER = "0xSignet_demo_chamber_author_00001";
+// Local preview only. This adapter demonstrates the UI and never represents
+// its deterministic output as GenLayer consensus or on-chain proof.
+export class MockAdapter {
+  readonly mode = "preview" as const;
+  private results: TestLensResult[] = [];
+  private listeners = new Set<(update: PhaseUpdate) => void>();
 
-// In-memory store. Mirrors what the contract holds authoritatively.
-class MockStore {
-  vaults = new Map<string, Vault>();
-  evidence = new Map<string, Evidence>();
-  ledger = new Map<string, LedgerEntry>();
-  // Plaintext payloads are kept only in the mock, keyed by vault, to simulate
-  // the committed reference resolving once the seal is opened.
-  payloads = new Map<string, string>();
-  seeded = false;
-}
+  subscribe(listener: (update: PhaseUpdate) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 
-const store = new MockStore();
+  private emit(update: PhaseUpdate): void {
+    this.listeners.forEach((listener) => listener(update));
+  }
 
-function seedDefaults() {
-  if (store.seeded) return;
-  store.seeded = true;
+  getExplorerUrl(): null {
+    return null;
+  }
 
-  const now = Date.now();
-  PRELOADED_VAULTS.forEach((preset) => {
-    const id = makeId("vault");
-    const sealedAt = now - preset.sealedDaysAgo * 24 * 60 * 60 * 1000;
-    const lastCheckedAt =
-      preset.lastCheckedHoursAgo === null
-        ? null
-        : now - preset.lastCheckedHoursAgo * 60 * 60 * 1000;
-    const opened = preset.state === "opened";
-    const vault: Vault = {
-      id,
-      owner: MOCK_OWNER,
-      recipient: preset.recipient,
-      sigil: preset.sigil,
-      title: preset.title,
-      payloadCommitment: opened ? `sealed://${id}` : "",
-      conditionText: preset.conditionText,
-      conditionVisibility: preset.conditionVisibility,
-      conditionBound: true,
-      conditionShrouded: false,
-      state: preset.state,
-      sealedAt,
-      lastCheckedAt,
-      openedAt: null,
-      closeness: preset.closeness,
-      closenessBand: bandOf(preset.closeness),
-      opened,
+  hasInjectedWallet(): boolean {
+    return false;
+  }
+
+  get connectedAddress(): string | null {
+    return null;
+  }
+
+  getPending(): null {
+    return null;
+  }
+
+  async recoverPending(): Promise<null> {
+    return null;
+  }
+
+  async submitCheck(input: SubmitCheckInput): Promise<TestLensResult> {
+    this.emit({ phase: "consensus", detail: "Preview analysis only. No transaction is being submitted." });
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    const checks = {
+      happy_path: { status: "covered" as const, evidence: input.testsSummary.split("\n")[0] || "Supplied test summary", missing_test: "Add another representative success case." },
+      errors: { status: "partial" as const, evidence: input.testsSummary.split("\n")[0] || "Supplied test summary", missing_test: "Add explicit failure-path assertions." },
+      permissions: { status: "missing" as const, evidence: input.testsSummary.split("\n")[0] || "Supplied test summary", missing_test: "Add unauthorized and wrong-role tests." },
+      edge_cases: { status: "partial" as const, evidence: input.testsSummary.split("\n")[0] || "Supplied test summary", missing_test: "Add empty, boundary, and duplicate-input tests." },
     };
-    store.vaults.set(id, vault);
-    store.payloads.set(id, preset.message);
-  });
-}
-
-// Small artificial latency so the rituals feel physical, not instant.
-function delay<T>(value: T, ms = 420): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
-
-export class MockAdapter implements DeadhandAdapter {
-  readonly mode = "mock" as const;
-
-  constructor() {
-    seedDefaults();
-  }
-
-  getIdentityAddress(): string | null {
-    return MOCK_OWNER;
-  }
-
-  async seal(input: SealInput): Promise<Vault> {
-    if (!input.payloadCommitment.trim()) {
-      throw new Error("A seal needs words before it can be pressed.");
-    }
-    if (!input.recipient.trim()) {
-      throw new Error("A seal needs a keeper to receive it.");
-    }
-    const id = makeId("vault");
-    const vault: Vault = {
-      id,
-      owner: input.owner || MOCK_OWNER,
-      recipient: input.recipient.trim(),
-      sigil: input.sigil,
-      title: input.title.trim() || "Untitled seal",
-      payloadCommitment: "",
-      conditionText: "",
-      conditionVisibility: input.conditionVisibility,
-      conditionBound: false,
-      conditionShrouded: false,
-      state: "sealed",
-      sealedAt: Date.now(),
-      lastCheckedAt: null,
-      openedAt: null,
-      closeness: 0,
-      closenessBand: 0,
-      opened: false,
+    const result: TestLensResult = {
+      request_id: input.requestId,
+      sender: "local-preview",
+      verdict: "partial",
+      confidence: "low",
+      checks,
+      missing_test_cases: [checks.permissions.missing_test, checks.errors.missing_test, checks.edge_cases.missing_test],
+      explanation: "Local preview identifies likely gaps from the supplied text. Connect contract mode for validator consensus and canonical state.",
+      submitted_at: Date.now(),
     };
-    store.vaults.set(id, vault);
-    // The plaintext never leaves the mock store until the seal is opened.
-    store.payloads.set(id, input.payloadCommitment.trim());
-    return delay(vault);
+    this.results.unshift(result);
+    this.emit({ phase: "complete", detail: "Preview complete; not persisted on-chain." });
+    return result;
   }
 
-  async bindCondition(vaultId: string, conditionText: string): Promise<Vault> {
-    const vault = store.vaults.get(vaultId);
-    if (!vault) throw new Error("That vault could not be found in the chamber.");
-    if (vault.conditionBound) throw new Error("Once bound, the condition cannot change.");
-    if (!conditionText.trim()) throw new Error("Bind a condition before the vault can wait.");
-    vault.conditionText = conditionText.trim();
-    vault.conditionBound = true;
-    return delay(vault);
+  async getResult(requestId: string): Promise<TestLensResult | null> {
+    return this.results.find((item) => item.request_id === requestId) ?? null;
   }
 
-  async checkWorld(input: CheckWorldInput): Promise<CheckResult> {
-    const vault = store.vaults.get(input.vaultId);
-    if (!vault) throw new Error("That vault could not be found in the chamber.");
-    if (!vault.conditionBound) throw new Error("Bind a condition before the vault can wait.");
-    if (vault.opened || vault.state === "opened") throw new Error("This vault is already open.");
+  async getResults(offset = 0, limit = 20): Promise<TestLensResult[]> {
+    return this.results.slice(offset, offset + limit);
+  }
 
-    const previousState = vault.state;
-    // Mock mode resolves known demo URIs locally. Contract mode never accepts
-    // this snapshot; it fetches the public URI independently on-chain.
-    const template = EVIDENCE_TEMPLATES.find((item) => item.sourceUri === input.sourceUri);
-    const snapshot = template?.snapshot ?? input.sourceUri;
-    const reading = decideCheck(vault.state, vault.conditionText, snapshot);
-
-    // A releasable vault never falls back.
-    let nextState = reading.nextState;
-    if (previousState === "releasable") nextState = "releasable";
-
-    vault.state = nextState;
-    vault.closeness = reading.closeness;
-    vault.closenessBand = reading.band;
-    vault.lastCheckedAt = Date.now();
-
-    const id = makeId("evidence");
-    const evidence: Evidence = {
-      id,
-      vaultId: vault.id,
-      sourceLabel: input.sourceLabel.trim() || "Public source",
-      sourceUri: input.sourceUri.trim(),
-      snapshot,
-      checkedAt: Date.now(),
+  async getSummary(): Promise<TestLensSummary> {
+    return {
+      total: this.results.length,
+      covered: this.results.filter((item) => item.verdict === "covered").length,
+      partial: this.results.filter((item) => item.verdict === "partial").length,
+      insufficient: this.results.filter((item) => item.verdict === "insufficient").length,
     };
-    store.evidence.set(id, evidence);
-
-    const result: CheckResult = {
-      vaultId: vault.id,
-      previousState,
-      nextState,
-      met: reading.met,
-      closeness: reading.closeness,
-      closenessBand: reading.band,
-      evidenceId: id,
-      note: reading.note,
-    };
-    return delay(result);
-  }
-
-  async openSeal(vaultId: string): Promise<OpenResult> {
-    const vault = store.vaults.get(vaultId);
-    if (!vault) throw new Error("That vault could not be found in the chamber.");
-    if (vault.opened || vault.state === "opened") throw new Error("This vault is already open.");
-    if (vault.state !== "releasable") throw new Error("This vault is not ready to open.");
-
-    const openedAt = Date.now();
-    vault.opened = true;
-    vault.openedAt = openedAt;
-    vault.state = "opened";
-    const payload = store.payloads.get(vaultId) ?? "";
-    vault.payloadCommitment = payload;
-
-    const trail = [...store.evidence.values()]
-      .filter((e) => e.vaultId === vaultId)
-      .map((e) => e.sourceLabel)
-      .join(" \u00b7 ");
-
-    const ledgerId = makeId("ledger");
-    const entry: LedgerEntry = {
-      id: ledgerId,
-      vaultId: vault.id,
-      title: vault.title,
-      conditionText: vault.conditionText,
-      recipient: vault.recipient,
-      evidenceTrail: trail || "No evidence recorded",
-      sealedAt: vault.sealedAt,
-      openedAt,
-      mockTxHash: mockTxHash(),
-      state: "opened",
-    };
-    store.ledger.set(ledgerId, entry);
-
-    return delay({
-      vaultId: vault.id,
-      ledgerId,
-      payloadCommitment: payload,
-      openedAt,
-      note: "The vault is open. Released to the keeper.",
-    });
-  }
-
-  async entrust(vaultId: string, newRecipient: string): Promise<Vault> {
-    const vault = store.vaults.get(vaultId);
-    if (!vault) throw new Error("That vault could not be found in the chamber.");
-    if (vault.opened || vault.state === "opened") {
-      throw new Error("An opened vault can no longer be entrusted.");
-    }
-    if (!newRecipient.trim()) throw new Error("Name a keeper to entrust this seal to.");
-    vault.recipient = newRecipient.trim();
-    return delay(vault);
-  }
-
-  async getVault(vaultId: string): Promise<Vault | null> {
-    return delay(store.vaults.get(vaultId) ?? null, 80);
-  }
-
-  async getVaults(): Promise<Vault[]> {
-    return delay(
-      [...store.vaults.values()].sort((a, b) => b.sealedAt - a.sealedAt),
-      80,
-    );
-  }
-
-  async getEvidence(vaultId: string): Promise<Evidence[]> {
-    return delay(
-      [...store.evidence.values()]
-        .filter((e) => e.vaultId === vaultId)
-        .sort((a, b) => a.checkedAt - b.checkedAt),
-      60,
-    );
-  }
-
-  async getLedger(): Promise<LedgerEntry[]> {
-    return delay(
-      [...store.ledger.values()].sort((a, b) => b.openedAt - a.openedAt),
-      80,
-    );
   }
 }

@@ -1,39 +1,34 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Spectral } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const display = Cormorant_Garamond({
+const sans = Inter({
   subsets: ["latin"],
-  variable: "--font-display",
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
+  variable: "--font-sans",
+  display: "swap",
 });
 
-const body = Spectral({
+const mono = JetBrains_Mono({
   subsets: ["latin"],
-  variable: "--font-body",
-  weight: ["300", "400", "500"],
+  variable: "--font-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Deadhand",
-  description: "Some words should wait for the world.",
+  title: "TestLens | Test coverage review",
+  description: "Compare feature requirements with supplied tests using GenLayer validator consensus.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0A0807",
+  themeColor: "#0b1214",
   width: "device-width",
   initialScale: 1,
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
-      <body className="chamber-grain">{children}</body>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }
